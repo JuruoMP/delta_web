@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-secondary text-white">
+                <h4 class="mb-0">分日对话记录</h4>
+            </div>
+            <div class="card-body">
+                {% if daily_conversations %}
+                    <div class="accordion" id="dailyAccordion">
+                        {% for date, conversations in daily_conversations.items() %}
+                            <div class="accordion-item mb-3">
+                                <h2 class="accordion-header" id="heading{{ loop.index }}">
+                                    <button class="accordion-button {% if loop.index != 1 %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ loop.index }}" aria-expanded="{% if loop.index == 1 %}true{% else %}false{% endif %}">
+                                        <div class="d-flex justify-content-between align-items-center w-100">
+                                            <span>{{ date }} ({{ conversations|length }}条记录)</span>
+                                        </div>
+                                    </button>
+                                </h2>
+                                <div id="collapse{{ loop.index }}" class="accordion-collapse collapse {% if loop.index == 1 %}show{% endif %}" aria-labelledby="heading{{ loop.index }}" data-bs-parent="#dailyAccordion">
+                                    <div class="accordion-body">
+                                        <div class="list-group">
+                                            {% for event_list, action_list, conversation in conversations %}
+                                                <div class="list-group-item list-group-item-action mb-2 rounded shadow-sm">
+                                                    <div class="d-flex w-100 justify-content-between">
+                                                        <h5 class="mb-1">对话 #{{ conversation.id }}</h5>
+                                                        <small class="text-muted">{{ conversation.created_at.strftime('%H:%M:%S') }}</small>
+                                                    </div>
+                                                    {% for event in event_list %}
+                                                    <div class="list">
+                                                        <strong>事件:</strong>
+                                                        <div class="bg-info bg-opacity-10 p-2 rounded mt-1 border border-info">
+                                                            <strong>{{ event.title }}<p></p></strong>
+                                                            {{ event.details }}
+                                                        </div>
+                                                    </div>
+                                                    {% endfor %}
+                                                    {% for action in action_list %}
+                                                    <div class="list">
+                                                        <strong>行动:</strong>
+                                                        <div class="bg-info bg-opacity-10 p-2 rounded mt-1 border border-info">
+                                                            <strong>Owner: {{ action.owner }}<p></p></strong>
+                                                            Task: {{ action.task }}
+                                                        </div>
+                                                    </div>
+                                                    {% endfor %}
+                                                    <!-- <div class="mb-2">
+                                                        <strong>摘要:</strong>
+                                                        <div class="bg-info bg-opacity-10 p-2 rounded mt-1 border border-info">
+                                                            {{ conversation.summary }}
+                                                        </div>
+                                                    </div> -->
+                                                    <button class="btn btn-sm btn-outline-primary toggle-details" data-target="details-{{ conversation.id }}">查看详情</button>
+                                                    <div id="details-{{ conversation.id }}" class="mt-3 bg-light p-3 rounded d-none">
+                                                        <strong>原始对话:</strong>
+                                                        <pre class="mt-2" style="white-space: pre-wrap; word-break: break-word;">{{ conversation.content }}</pre>
+                                                    </div>
+                                                </div>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="alert alert-info">
+                        暂无对话记录。请先上传对话内容。
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// 详情切换功能
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.toggle-details').forEach(button => {
+        button.addEventListener('click', function() {
+            const targetId = this.getAttribute('data-target');
+            const targetElement = document.getElementById(targetId);
+            targetElement.classList.toggle('d-none');
+            this.textContent = targetElement.classList.contains('d-none') ? '查看详情' : '隐藏详情';
+        });
+    });
+});
+</script>
+{% endblock %}

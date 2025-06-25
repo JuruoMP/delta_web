@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">上传对话记录</h4>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('index') }}">
+                    {{ form.hidden_tag() }}
+                    <div class="mb-3">
+                        {{ form.conversation_text.label(class="form-label") }}
+                        {{ form.conversation_text(class="form-control", rows=10, placeholder="请粘贴对话记录...") }}
+                        {% if form.conversation_text.errors %}
+                            <div class="text-danger">
+                                {% for error in form.conversation_text.errors %}
+                                    <small>{{ error }}</small>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+                    <div class="d-grid">
+                        {{ form.submit(class="btn btn-primary btn-lg") }}
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

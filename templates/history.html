@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-secondary text-white">
+                <h4 class="mb-0">历史对话记录</h4>
+            </div>
+            <div class="card-body">
+                {% if conversations %}
+                    <div class="list-group">
+                        {% for conversation in conversations %}
+                            <div class="list-group-item list-group-item-action mb-3 rounded shadow-sm">
+                                <div class="d-flex w-100 justify-content-between">
+                                    <h5 class="mb-1">对话 #{{ conversation.id }}</h5>
+                                    <small class="text-muted">{{ conversation.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</small>
+                                </div>
+                                <div class="mb-3">
+                                    <strong>原始对话:</strong>
+                                    <pre class="bg-light p-3 rounded mt-2" style="white-space: pre-wrap; word-break: break-word;">{{ conversation.content }}</pre>
+                                </div>
+                                <div>
+                                    <strong>摘要:</strong>
+                                    <div class="bg-info bg-opacity-10 p-3 rounded mt-2 border border-info">
+                                        {{ conversation.summary }}
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="alert alert-info">
+                        暂无历史对话记录。请先上传对话内容。
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

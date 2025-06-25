@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+
+{% block title %}当前事件{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <h1 class="mb-4">当前事件</h1>
+    
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">对话历史汇总</h5>
+        </div>
+        <div class="card-body">
+            {% if event_list %}
+                {% for event in event_list %}
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <p class="card-title"><b>{{ event.title }}</b></p>
+                            <p class="card-text">{{ event.details }}</p>
+                        </div>
+                    </div>
+                {% endfor %}
+            {% else %}
+                <p class="card-text">暂无汇总数据</p>
+            {% endif %}
+        </div>
+        <div class="card-footer">
+            <a href="{{ url_for('index') }}" class="btn btn-primary">返回首页</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
