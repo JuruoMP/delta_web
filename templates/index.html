@@ -1,32 +1,67 @@
 {% extends 'base.html' %}
 
+{% block title %}上传对话{% endblock %}
+
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-8">
-        <div class="card shadow-sm">
-            <div class="card-header bg-primary text-white">
-                <h4 class="mb-0">上传对话记录</h4>
-            </div>
-            <div class="card-body">
-                <form method="POST" action="{{ url_for('index') }}">
-                    {{ form.hidden_tag() }}
-                    <div class="mb-3">
-                        {{ form.conversation_text.label(class="form-label") }}
-                        {{ form.conversation_text(class="form-control", rows=10, placeholder="请粘贴对话记录...") }}
-                        {% if form.conversation_text.errors %}
-                            <div class="text-danger">
-                                {% for error in form.conversation_text.errors %}
-                                    <small>{{ error }}</small>
-                                {% endfor %}
-                            </div>
-                        {% endif %}
+<div class="container mt-5">
+    <h1 class="mb-4">上传对话记录</h1>
+    
+    <div class="card">
+        <div class="card-body">
+            <form id="upload-form" method="POST">
+                {{ form.hidden_tag() }}
+                <div class="mb-3">
+                    <label for="conversation_text" class="form-label">对话文本 <span class="text-danger">*</span></label>
+                    {{ form.conversation_text(class="form-control", rows=10, id="conversation-text", required=True) }}
+                    {% if form.conversation_text.errors %}
+                    <div class="text-danger mt-2">
+                        {% for error in form.conversation_text.errors %}
+                            <small>{{ error }}</small>
+                        {% endfor %}
                     </div>
-                    <div class="d-grid">
-                        {{ form.submit(class="btn btn-primary btn-lg") }}
-                    </div>
-                </form>
-            </div>
+                    {% endif %}
+                </div>
+                
+                <div id="error-message" class="alert alert-danger d-none mb-3"></div>
+                <div id="processing-indicator" class="alert alert-info d-none mb-3">
+                    <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                    处理中...
+                </div>
+                
+                <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                    <button type="submit" class="btn btn-primary" id="submit-btn">提交处理</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
+
+<script>
+// 修复语法错误，移除多余空格
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('upload-form');
+    const submitBtn = document.getElementById('submit-btn');
+    const textarea = document.getElementById('conversation-text');
+    const errorMessage = document.getElementById('error-message');
+    const processingIndicator = document.getElementById('processing-indicator');
+    
+    form.addEventListener('submit', function(e) {
+        // 清除之前的错误消息
+        errorMessage.classList.add('d-none');
+        errorMessage.textContent = '';
+        
+        // 客户端验证
+        if (!textarea.value.trim()) {
+            e.preventDefault();
+            errorMessage.textContent = '请输入对话文本后再提交';
+            errorMessage.classList.remove('d-none');
+            return;
+        }
+        
+        // 显示处理中状态
+        processingIndicator.classList.remove('d-none');
+        submitBtn.disabled = true;
+    });
+});
+</script>
 {% endblock %}

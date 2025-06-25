@@ -53,7 +53,7 @@ def index():
             latest_day_topics = json.loads(summary)['topics']
             new_memory = llm_service.generate_memory(memory_topics, latest_day_topics)
         else:
-            new_memory = json.loads(summary)['topics']
+            new_memory = json.dumps({'topics': json.loads(summary)['topics']}, ensure_ascii=False)
         add_memory(new_memory)
         # new_memory = fake_memory
         # add_memory(new_memory)
