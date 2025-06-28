@@ -11,7 +11,7 @@
         <div class="container">
             <a class="navbar-brand" href="{{ url_for('index') }}">对话摘要工具</a>
             <div class="collapse navbar-collapse">
-                <ul class="navbar-nav">
+                <ul class="navbar-nav me-auto">
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('index') }}">上传对话</a>
                     </li>
@@ -21,6 +21,25 @@
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('daily') }}">分日记录</a>
                     </li>
+                    {% if g.current_user and g.current_user.username == 'admin' %}
+                    <li class="nav-item">
+                        <a class="nav-link text-danger" href="{{ url_for('clear_database_confirm') }}">清空数据库</a>
+                    </li>
+                    {% endif %}
+                </ul>
+                <ul class="navbar-nav">
+                    {% if g.current_user %}
+                    <li class="nav-item">
+                        <span class="nav-link">欢迎, {{ g.current_user.username }}</span>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('logout') }}">退出登录</a>
+                    </li>
+                    {% else %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('login') }}">登录</a>
+                    </li>
+                    {% endif %}
                 </ul>
             </div>
         </div>

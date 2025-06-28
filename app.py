@@ -3,12 +3,12 @@ import json
 from flask import Flask, render_template, redirect, url_for, flash, request, jsonify
 from extensions import db
 from flask_wtf import FlaskForm
-from wtforms import TextAreaField, FileField, SubmitField
-from wtforms.validators import DataRequired
+from wtforms import TextAreaField, FileField, SubmitField, StringField, PasswordField
+from wtforms.validators import DataRequired, Length
 from datetime import datetime
 from dotenv import load_dotenv
 from services.llm_service import llm_service
-from models import Conversation, Event, Action, Memory
+from models import Conversation, Event, Action, Memory, User
 from services.db_service import add_conversation, get_all_conversations, clear_conversations, clear_all_data, get_latest_memory, add_memory
 
 from fake_data import fake_summary, fake_memory
@@ -24,13 +24,63 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db.init_app(app)
 
-# 表单定义
+# 登录表单
+class LoginForm(FlaskForm):
+    username = StringField('用户名', validators=[DataRequired(), Length(min=4, max=80)])
+    password = PasswordField('密码', validators=[DataRequired()])
+    submit = SubmitField('登录')
+
+# 上传表单
 class UploadForm(FlaskForm):
     conversation_text = TextAreaField('对话文本', validators=[DataRequired()])
     submit = SubmitField('提交处理')
 
+from functools import wraps
+from flask import session, g
+
+# 登录保护装饰器
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            flash('请先登录', 'warning')
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+# 加载当前用户
+@app.before_request
+def load_current_user():
+    if 'user_id' in session:
+        g.current_user = User.query.get(session['user_id'])
+    else:
+        g.current_user = None
+
+# 登录路由
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if 'user_id' in session:
+        return redirect(url_for('index'))
+    form = LoginForm()
+    if form.validate_on_submit():
+        user = User.query.filter_by(username=form.username.data).first()
+        if user and user.check_password(form.password.data):
+            session['user_id'] = user.id
+            flash('登录成功！', 'success')
+            return redirect(url_for('index'))
+        flash('用户名或密码不正确', 'danger')
+    return render_template('login.html', form=form)
+
+# 登出路由
+@app.route('/logout')
+def logout():
+    session.pop('user_id', None)
+    flash('已成功登出', 'success')
+    return redirect(url_for('login'))
+
 # 路由
 @app.route('/', methods=['GET', 'POST'])
+@login_required
 def index():
     form = UploadForm()
     if form.validate_on_submit():
@@ -64,6 +114,7 @@ def index():
 
 
 @app.route('/current-event')
+@login_required
 def current_event():
     memory = get_latest_memory()
     event_list = []
@@ -80,6 +131,7 @@ def current_event():
 
 
 @app.route('/daily')
+@login_required
 def daily():
     # 查询所有对话并按日期分组
     conversations = get_all_conversations()
@@ -113,12 +165,15 @@ def daily():
     return render_template('daily.html', daily_conversations=daily_conversations)
 
 @app.route('/clear-database', methods=['POST'])
+@login_required
 def clear_database():
-    # 安全验证：仅在设置了CLEAR_DB_SECRET时检查请求头
-    clear_db_secret = os.getenv('CLEAR_DB_SECRET')
-    if clear_db_secret and request.headers.get('X-Secret-Key') != clear_db_secret:
-        print(f'Clear failed by key')
-        return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
+    # 检查是否为管理员用户
+    if g.current_user.username != 'admin':
+        return jsonify({'status': 'error', 'message': '权限不足，只有管理员可以清空数据库'}), 403
+    # 验证确认参数
+    confirm_admin = request.form.get('confirmAdmin')
+    if confirm_admin != 'admin':
+        return jsonify({'status': 'error', 'message': '请输入正确的确认信息'}), 400
     
     try:
         # 删除所有数据
@@ -134,9 +189,39 @@ def clear_database():
         db.session.rollback()
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+# 清空数据库确认页面路由
+@app.route('/clear-database-confirm', methods=['GET'])
+@login_required
+def clear_database_confirm():
+    # 检查是否为管理员
+    if g.current_user.username != 'admin':
+        flash('权限不足，只有管理员可以访问此页面', 'danger')
+        return redirect(url_for('index'))
+    from flask_wtf import FlaskForm
+    form = FlaskForm()  # 创建空表单用于CSRF令牌
+    return render_template('clear_database.html', form=form)
+
 # 创建数据库表
 with app.app_context():
     db.create_all()
+
+    # 创建默认管理员用户（如果不存在）
+    if not User.query.first():
+        # admin
+        admin_username = os.getenv('ADMIN_USERNAME', 'admin')
+        admin_password = os.getenv('ADMIN_PASSWORD', 'admin123')  # 默认密码，生产环境应修改
+        admin_user = User(username=admin_username)
+        admin_user.set_password(admin_password)
+        db.session.add(admin_user)
+        # demo_user
+        user_username = 'user'
+        user_password = 'user'
+        user_user = User(username=user_username)
+        user_user.set_password(user_password)
+        db.session.add(user_user)
+        
+        db.session.commit()
+        print(f"已创建默认管理员用户: {admin_username}, 密码: {admin_password}")
 
 if __name__ == '__main__':
     app.run(debug=True)
