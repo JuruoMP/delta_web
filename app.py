@@ -99,7 +99,7 @@ def index():
         # update long-term memory
         latest_memory = get_latest_memory()
         if latest_memory:
-            memory_topics = json.loads(latest_memory)['topics']
+            memory_topics = json.loads(latest_memory.content)['topics']
             latest_day_topics = json.loads(summary)['topics']
             new_memory = llm_service.generate_memory(memory_topics, latest_day_topics)
         else:

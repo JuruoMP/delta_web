@@ -21,7 +21,7 @@ class LLMService:
             "max_tokens": 32768,
         }
 
-    def call_openai_api_with_retry(self, messages, max_retries=2, delay=60):
+    def call_openai_api_with_retry(self, messages, max_retries=3, delay=5):
         retries = 0
         while retries < max_retries:
             try:
@@ -35,7 +35,7 @@ class LLMService:
             except Exception as e:
                 print(f"An error occurred: {e}")
             retries += 1
-            _delay = delay + random.randint(1, 5) * delay
+            _delay = delay + random.randint(1, 3) * delay
             print(f"Retrying... ({retries}/{max_retries}), sleep: {_delay}s")
             time.sleep(_delay)
         raise Exception("API call failed after maximum retries")
@@ -47,6 +47,14 @@ class LLMService:
         messages.append({"role": "user", "content": prompt})
         try:
             response = self.call_openai_api_with_retry(messages)
+            call_llm_log = {
+                "model": self.conf["model_name"],
+                "messages": messages,
+                "response": response.choices[0].message.content.strip()
+            }
+            with open('call_llm_log.json', 'a') as f:
+                json.dump(call_llm_log, f, ensure_ascii=False)
+                f.write('\n')
             return response.choices[0].message.content.strip()
         except Exception as e:
             print(f"Final error: {e}")
