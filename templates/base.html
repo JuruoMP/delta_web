@@ -24,6 +24,9 @@
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('qa') }}">问答</a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('audio_upload') }}">音频上传</a>
+                    </li>
                     {% if g.current_user and g.current_user.username == 'admin' %}
                     <li class="nav-item">
                         <a class="nav-link text-danger" href="{{ url_for('clear_database_confirm') }}">清空数据库</a>

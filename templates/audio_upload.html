@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+
+{% block title %}上传音频{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <h2>音频上传</h2>
+    <form method="POST" enctype="multipart/form-data">
+        {{ form.hidden_tag() }}
+        <div class="mb-3">
+            {{ form.audio_file.label(class="form-label") }}
+            {{ form.audio_file(class="form-control") }}
+            {% if form.audio_file.errors %}
+                <div class="text-danger">
+                    {% for error in form.audio_file.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+        <div class="mb-3">
+            {{ form.submit(class="btn btn-primary") }}
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -7,6 +7,8 @@ from wtforms import TextAreaField, FileField, SubmitField, StringField, Password
 from wtforms.validators import DataRequired, Length
 from datetime import datetime
 from dotenv import load_dotenv
+from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 from services.llm_service import llm_service
 from models import Conversation, Event, Action, Memory, User
 from services.db_service import add_conversation, get_all_conversations, clear_conversations, clear_all_data, get_latest_memory, add_memory
@@ -38,6 +40,10 @@ class UploadForm(FlaskForm):
 class QAForm(FlaskForm):
     question = TextAreaField('问题', validators=[DataRequired()])
     submit = SubmitField('获取回答')
+
+class AudioUploadForm(FlaskForm):
+    audio_file = FileField('音频文件', validators=[DataRequired()])
+    submit = SubmitField('上传并处理')
 
 from functools import wraps
 from flask import session, g
@@ -86,7 +92,8 @@ def logout():
 @app.route('/', methods=['GET', 'POST'])
 @login_required
 def index():
-    form = UploadForm()
+    prefilled_text = request.args.get('prefilled_text', '')
+    form = UploadForm(conversation_text=prefilled_text)
     if form.validate_on_submit():
         content = form.conversation_text.data
         try:
@@ -212,6 +219,33 @@ def clear_database_confirm():
     form = FlaskForm()  # 创建空表单用于CSRF令牌
     return render_template('clear_database.html', form=form)
 
+@app.route('/audio-upload', methods=['GET', 'POST'])
+@login_required
+def audio_upload():
+    form = AudioUploadForm()
+    if form.validate_on_submit():
+        audio_file = form.audio_file.data
+        if audio_file:
+            # 保存上传的音频文件
+            filename = secure_filename(audio_file.filename)
+            upload_folder = os.path.join(app.root_path, 'uploads')
+            os.makedirs(upload_folder, exist_ok=True)
+            file_path = os.path.join(upload_folder, filename)
+            audio_file.save(file_path)
+            
+            # 调用ASR服务转换音频为文本
+            try:
+                from services.asr_service import asr_service
+                transcription = asr_service.transcribe_audio(file_path)
+                
+                # 将转录文本作为对话内容处理
+                flash('音频上传成功并已转换为文本', 'success')
+                return redirect(url_for('index', prefilled_text=transcription))
+            except Exception as e:
+                flash(f'音频处理失败: {str(e)}', 'danger')
+                return redirect(url_for('audio_upload'))
+    return render_template('audio_upload.html', form=form)
+
 @app.route('/qa', methods=['GET', 'POST'])
 @login_required
 def qa():
@@ -258,13 +292,13 @@ with app.app_context():
     if not User.query.first():
         # admin
         admin_username = os.getenv('ADMIN_USERNAME', 'admin')
-        admin_password = os.getenv('ADMIN_PASSWORD', 'admin123')  # 默认密码，生产环境应修改
+        admin_password = os.getenv('ADMIN_PASSWORD', 'password@admin#2025?')  # 默认密码，生产环境应修改
         admin_user = User(username=admin_username)
         admin_user.set_password(admin_password)
         db.session.add(admin_user)
         # demo_user
         user_username = 'user'
-        user_password = 'user'
+        user_password = 'password@user#2025!'
         user_user = User(username=user_username)
         user_user.set_password(user_password)
         db.session.add(user_user)
