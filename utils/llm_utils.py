@@ -56,13 +56,13 @@ Please populate the following JSON schema based on your analysis of the `CONVERS
 
 ## 4. EXTRACTION GUIDELINES
 - summary: A concise overview of the entire conversation (50-100 characters)
-- topics: Extract distinct discussion topics with:
+- topics: Extract ONLY the 3-5 MOST IMPORTANT discussion topics with NO chit-chat content. Focus on preserving comprehensive important information:
   - title: Brief topic heading
   - summary: Key points of this topic
-  - information: Specific details, facts or data
-  - type: One of: "工作事务", "家庭生活", "学习研究", "社交娱乐", "健康医疗", "金融理财", "日常闲聊", "其他"
+  - information: Specific details, facts or data (ensure comprehensive coverage of important information)
+  - type: One of: "工作事务", "家庭生活", "学习研究", "社交娱乐", "健康医疗", "金融理财", "其他" (EXCLUDE "日常闲聊")
   - sentiment: Overall sentiment: "积极", "中性", or "消极"
-- action_items: Extract all future tasks or commitments
+- action_items: Extract ONLY the 3-5 MOST IMPORTANT future tasks or commitments THAT REQUIRE THE USER TO COMPLETE with:
   - owner: Person responsible (if not specified, attribute to relevant speaker)
   - task: Task description
   - due_date: Deadline (null if not specified)

@@ -164,14 +164,16 @@ def daily():
         event_list = []
         conv_actions = json.loads(conv.summary).get('action_items', [])
         action_list = []
-        for topic in conv_topics:
+        num_topic = hash(date_key) % 2 + 2
+        num_action = hash(date_key) % 3 + 2
+        for topic in conv_topics[:num_topic]:
             event = Event(
                 date=conv.created_at,
                 title=topic.get('title', ''),
                 details=topic.get('summary', '')
             )
             event_list.append(event)
-        for action in conv_actions:
+        for action in conv_actions[:num_action]:
             action = Action(
                 owner=action.get('owner', ''),
                 task=action.get('task', '')
