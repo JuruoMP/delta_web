@@ -89,6 +89,13 @@ def index():
     form = UploadForm()
     if form.validate_on_submit():
         content = form.conversation_text.data
+        try:
+            line0 = content.split('\n', 1)[0].strip()
+            print(f'line0: {line0}')
+            script_time = datetime.strptime(line0, "%Y-%m-%d")
+        except:
+            script_time = datetime.now()
+        print(f'script_time: {script_time}')
         
         # extract daily information
         try:
@@ -96,7 +103,7 @@ def index():
         except Exception as e:
             flash(f'生成摘要失败: {str(e)}', 'danger')
             return redirect(url_for('index'))
-        add_conversation(content, summary)
+        add_conversation(content, summary, script_time)
         # summary = fake_summary
         # add_conversation(content, summary)
         

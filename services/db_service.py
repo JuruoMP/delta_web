@@ -1,3 +1,4 @@
+from datetime import date
 from extensions import db
 from models import Event, Conversation, Memory
 
@@ -33,10 +34,13 @@ def update_event(event_id, date=None, title=None, details=None):
         raise e
 
 
-def add_conversation(content, summary):
+def add_conversation(content, summary, date=None):
     """添加新对话到数据库"""
     try:
-        conversation = Conversation(content=content, summary=summary)
+        if date:
+            conversation = Conversation(content=content, summary=summary, created_at=date)
+        else:
+            conversation = Conversation(content=content, summary=summary)
         db.session.add(conversation)
         db.session.commit()
         return conversation
