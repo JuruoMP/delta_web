@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-5">
+    <h2>问答助手</h2>
+    <form id="qaForm" method="POST" action="{{ url_for('qa') }}">
+        {{ form.hidden_tag() }}
+        <div class="mb-3">
+            {{ form.question.label(class="form-label") }}
+            {{ form.question(class="form-control", rows=3) }}
+            {% if form.question.errors %}
+                <div class="text-danger">
+                    {% for error in form.question.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+        {{ form.submit(class="btn btn-primary") }}
+    </form>
+    
+    <div id="loading" class="mt-4" style="display: none;">
+        <div class="alert alert-info">思考中，请稍候...</div>
+    </div>
+    
+    <div id="answerSection" class="mt-4" style="display: {% if answer %}block{% else %}none{% endif %}">
+        <h3>回答:</h3>
+        <div class="card">
+            <div class="card-body">
+                <div style="white-space: pre-line;">{{ answer|safe }}</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    document.getElementById('qaForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const form = e.target;
+        const loadingDiv = document.getElementById('loading');
+        const answerSection = document.getElementById('answerSection');
+        const answerContent = answerSection.querySelector('.card-body div');
+        
+        // 显示加载状态，隐藏回答区域
+        loadingDiv.style.display = 'block';
+        answerSection.style.display = 'none';
+        
+        try {
+            const formData = new FormData(form);
+            const response = await fetch(form.action, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            });
+            
+            const result = await response.json();
+            
+            if (result.status === 'success') {
+                answerContent.innerHTML = result.answer;
+                answerSection.style.display = 'block';
+            } else {
+                alert(result.message);
+            }
+        } catch (error) {
+            alert('提交请求失败，请重试');
+        } finally {
+            loadingDiv.style.display = 'none';
+        }
+    });
+    </script>
+</div>
+{% endblock %}

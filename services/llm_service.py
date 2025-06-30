@@ -5,7 +5,7 @@ import requests
 import time
 from dotenv import load_dotenv
 from volcenginesdkarkruntime import Ark
-from utils.llm_utils import llm_gen_conversation_summary, llm_gen_memory
+from utils.llm_utils import llm_gen_conversation_summary, llm_gen_memory, llm_get_qa_answer
 
 # 加载环境变量
 load_dotenv()
@@ -65,6 +65,12 @@ class LLMService:
 
     def generate_memory(self, historical_data, latest_day_data):
         return llm_gen_memory(self, historical_data, latest_day_data)
+
+    def generate_answer(self, question, current_memory, retrived_contexts):
+        # return f"answer of {question}"
+        current_memory_json = json.dumps(current_memory, indent=2, ensure_ascii=False)
+        retrived_contexts_str = '\n\n'.join(retrived_contexts)
+        return llm_get_qa_answer(self, current_memory_json, retrived_contexts_str, question)
 
 
 llm_service = LLMService()

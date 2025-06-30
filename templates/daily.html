@@ -11,51 +11,52 @@
                 {% if daily_conversations %}
                     <div class="accordion" id="dailyAccordion">
                         {% for date, conversations in daily_conversations.items() %}
-                            <div class="accordion-item mb-3">
+                            <div class="accordion-item mb-4">
                                 <h2 class="accordion-header" id="heading{{ loop.index }}">
-                                    <button class="accordion-button {% if loop.index != 1 %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ loop.index }}" aria-expanded="{% if loop.index == 1 %}true{% else %}false{% endif %}">
+                                    <button class="accordion-button {% if loop.index != 1 %}collapsed{% endif %} bg-white hover:bg-light transition-colors duration-200 {% if loop.index == 1 %}bg-primary bg-opacity-25 border-2 border-primary border-opacity-80 shadow-sm{% else %}border border-gray-100{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ loop.index }}" aria-expanded="{% if loop.index == 1 %}true{% else %}false{% endif %}" style="padding: 0.8rem 1.25rem;">
                                         <div class="d-flex justify-content-between align-items-center w-100">
-                                            <span>{{ date }} ({{ conversations|length }}条记录)</span>
+                                            <span class="fs-5 fw-semibold text-primary"><i class="bi bi-calendar3 me-2 text-primary"></i>{{ date }} ({{ conversations|length }}条记录)</span>
                                         </div>
                                     </button>
                                 </h2>
                                 <div id="collapse{{ loop.index }}" class="accordion-collapse collapse {% if loop.index == 1 %}show{% endif %}" aria-labelledby="heading{{ loop.index }}" data-bs-parent="#dailyAccordion">
-                                    <div class="accordion-body">
+                                    <div class="accordion-body p-4">
                                         <div class="list-group">
                                             {% for event_list, action_list, conversation in conversations %}
-                                                <div class="list-group-item list-group-item-action mb-2 rounded shadow-sm">
+                                                <div class="list-group-item list-group-item-action mb-3 rounded shadow-sm hover:shadow-md hover:-translate-y-1 hover:border-primary/20 transition-all duration-300 {% if loop.index % 2 == 0 %}bg-white{% else %}bg-light bg-opacity-50{% endif %}">
                                                     <div class="d-flex w-100 justify-content-between">
-                                                        <h5 class="mb-1">对话 #{{ conversation.id }}</h5>
-                                                        <small class="text-muted">{{ conversation.created_at.strftime('%H:%M:%S') }}</small>
+                                                        <h5 class="mb-1 fw-bold">对话 #{{ conversation.id }}</h5>
+                                                        <small class="text-secondary">{{ conversation.created_at.strftime('%H:%M:%S') }}</small>
                                                     </div>
+                                                    <strong class="d-block mb-2 text-primary mt-4">事件:</strong>
                                                     {% for event in event_list %}
                                                     <div class="list">
-                                                        <strong>事件:</strong>
                                                         <div class="bg-info bg-opacity-10 p-2 rounded mt-1 border border-info">
-                                                            <strong>{{ event.title }}<p></p></strong>
+                                                            <strong><i class="bi bi-calendar-event text-info me-2 fs-4"></i>{{ event.title }}<p></p></strong>
                                                             {{ event.details }}
                                                         </div>
                                                     </div>
                                                     {% endfor %}
+                                                    <br />
+                                                    <strong class="d-block mb-2 text-success mt-4">行动:</strong>
                                                     {% for action in action_list %}
                                                     <div class="list">
-                                                        <strong>行动:</strong>
-                                                        <div class="bg-info bg-opacity-10 p-2 rounded mt-1 border border-info">
-                                                            <strong>Owner: {{ action.owner }}<p></p></strong>
+                                                        <div class="bg-success bg-opacity-10 p-4 rounded mt-4 border border-success shadow-sm mb-4">
+                                                            <strong><i class="bi bi-check2-square text-success me-2 fs-4"></i>Owner: {{ action.owner }}<p></p></strong>
                                                             Task: {{ action.task }}
                                                         </div>
                                                     </div>
                                                     {% endfor %}
                                                     <!-- <div class="mb-2">
                                                         <strong>摘要:</strong>
-                                                        <div class="bg-info bg-opacity-10 p-2 rounded mt-1 border border-info">
+                                                        <div class="bg-info bg-opacity-10 p-3 rounded mt-1 border border-info shadow-sm mb-4">
                                                             {{ conversation.summary }}
                                                         </div>
                                                     </div> -->
-                                                    <button class="btn btn-sm btn-outline-primary toggle-details" data-target="details-{{ conversation.id }}">查看详情</button>
-                                                    <div id="details-{{ conversation.id }}" class="mt-3 bg-light p-3 rounded d-none">
+                                                    <button class="btn btn-sm btn-primary toggle-details hover:bg-primary-dark hover:shadow-md hover:-translate-y-0.5 hover:scale-105 transition-all duration-300 px-4 py-1" data-target="details-{{ conversation.id }}">查看详情</button>
+                                                    <div id="details-{{ conversation.id }}" class="mt-3 bg-light p-3 rounded d-none transition-all duration-300 ease-in-out">
                                                         <strong>原始对话:</strong>
-                                                        <pre class="mt-2" style="white-space: pre-wrap; word-break: break-word;">{{ conversation.content }}</pre>
+                                                        <pre class="mt-2 overflow-auto border border-gray-200 rounded-lg shadow-sm p-3 bg-gray-50" style="white-space: pre-wrap; word-break: break-word; max-height: 300px; line-height: 1.7; font-size: 0.95rem; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">{{ conversation.content }}</pre>
                                                     </div>
                                                 </div>
                                             {% endfor %}
@@ -66,8 +67,9 @@
                         {% endfor %}
                     </div>
                 {% else %}
-                    <div class="alert alert-info">
-                        暂无对话记录。请先上传对话内容。
+                    <div class="alert alert-info border rounded shadow-sm p-5 text-center d-flex flex-column align-items-center justify-content-center" style="min-height: 220px;">
+                        <div class="mb-3"><i class="bi bi-inbox fs-5 text-muted"></i></div>
+                        <p style="line-height: 1.6; padding: 0 1rem; color: #868e96; font-size: 0.95rem;">暂无对话记录。请先上传对话内容。</p>
                     </div>
                 {% endif %}
             </div>

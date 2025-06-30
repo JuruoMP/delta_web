@@ -35,6 +35,10 @@ class UploadForm(FlaskForm):
     conversation_text = TextAreaField('对话文本', validators=[DataRequired()])
     submit = SubmitField('提交处理')
 
+class QAForm(FlaskForm):
+    question = TextAreaField('问题', validators=[DataRequired()])
+    submit = SubmitField('获取回答')
+
 from functools import wraps
 from flask import session, g
 
@@ -200,6 +204,44 @@ def clear_database_confirm():
     from flask_wtf import FlaskForm
     form = FlaskForm()  # 创建空表单用于CSRF令牌
     return render_template('clear_database.html', form=form)
+
+@app.route('/qa', methods=['GET', 'POST'])
+@login_required
+def qa():
+    form = QAForm()
+    answer = None
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest' and form.validate_on_submit():
+        question = form.question.data
+        try:
+            memory_topics = {}
+            latest_memory = get_latest_memory()
+            if latest_memory:
+                memory_topics = json.loads(latest_memory.content)['topics']
+            conversations = get_all_conversations()
+            content_list = []
+            for conv in conversations:
+                content = conv.content
+                content_list.append(content)
+            answer = llm_service.generate_answer(question, memory_topics, content_list)
+            return jsonify({'status': 'success', 'answer': answer})
+        except Exception as e:
+            return jsonify({'status': 'error', 'message': f'获取回答失败: {str(e)}'})
+    elif form.validate_on_submit():
+        question = form.question.data
+        try:
+            memory_topics = {}
+            latest_memory = get_latest_memory()
+            if latest_memory:
+                memory_topics = json.loads(latest_memory.content)['topics']
+            conversations = get_all_conversations()
+            content_list = []
+            for conv in conversations:
+                content = conv.content
+                content_list.append(content)
+            answer = llm_service.generate_answer(question, memory_topics, content_list)
+        except Exception as e:
+            flash(f'获取回答失败: {str(e)}', 'danger')
+    return render_template('qa.html', form=form, answer=answer)
 
 # 创建数据库表
 with app.app_context():
