@@ -12,15 +12,28 @@ load_dotenv()
 
 class LLMService:
     def __init__(self):
-        self.model_client = Ark(
-            base_url="https://ark.cn-beijing.volces.com/api/v3",
-            api_key=os.getenv("ARK_API_KEY"),
-        )
-        self.default_model = "doubao-seed-1-6-250615"
         self.model_configs = {
-            "doubao-seed-1-6-250615": {"max_tokens": 32768},
-            # 可添加更多模型配置
+            "doubao-1.6": {
+                "model_id": "doubao-seed-1-6-250615", 
+                "max_tokens": 32768,
+                "api_key": os.getenv("ARK_API_KEY_DOBAO_1_6")
+            },
+            "doubao-1.6-flash": {
+                "model_id": "ep-20250702234129-6tnzb", 
+                "max_tokens": 32768,
+                "api_key": os.getenv("ARK_API_KEY_DOBAO_1_6_FLASH")
+            },
         }
+        self.model_clients = {}
+        for model_name, config in self.model_configs.items():
+            api_key = config.get("api_key")
+            if not api_key:
+                raise ValueError(f"API key for model {model_name} is not set in environment variables")
+            self.model_clients[model_name] = Ark(
+                base_url="https://ark.cn-beijing.volces.com/api/v3",
+                api_key=api_key,
+            )
+        self.default_model = "doubao-1.6"
 
     def call_openai_api_with_retry(self, messages, model, max_retries=3, delay=5):
         retries = 0
@@ -29,7 +42,7 @@ class LLMService:
                 # if self.model == 'doubao-1.6':
                 #     response = self.model_client.chat.completions.create(model=self.conf["model_name"], messages=messages, max_tokens=self.conf["max_tokens"], thinking={"type":"disabled"})
                 # else:
-                response = self.model_client.chat.completions.create(model=model, messages=messages)
+                response = self.model_clients[model].chat.completions.create(model=self.model_configs[model]["model_id"], messages=messages)
                 return response
             # except openai.OpenAIError as e:
             #     print(f"OpenAI error occurred: {e}")
