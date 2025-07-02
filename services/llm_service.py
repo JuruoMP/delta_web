@@ -13,16 +13,21 @@ load_dotenv()
 class LLMService:
     def __init__(self):
         self.model_configs = {
-            "doubao-1.6": {
+            "default": {
                 "model_id": "doubao-seed-1-6-250615", 
                 "max_tokens": 32768,
                 "api_key": os.getenv("ARK_API_KEY_DOBAO_1_6")
             },
-            "doubao-1.6-flash": {
+            "default-flash": {
                 "model_id": "ep-20250702234129-6tnzb", 
                 "max_tokens": 32768,
                 "api_key": os.getenv("ARK_API_KEY_DOBAO_1_6_FLASH")
             },
+            "R1": {
+                "model_id": "ep-20250703015232-5mrzd",
+                "max_tokens": 32768,
+                "api_key": os.getenv("ARK_API_KEY_DEEPSEEK_R1")
+            }
         }
         self.model_clients = {}
         for model_name, config in self.model_configs.items():
@@ -33,7 +38,7 @@ class LLMService:
                 base_url="https://ark.cn-beijing.volces.com/api/v3",
                 api_key=api_key,
             )
-        self.default_model = "doubao-1.6"
+        self.default_model = "default"
 
     def call_openai_api_with_retry(self, messages, model, max_retries=3, delay=5):
         retries = 0
