@@ -146,9 +146,6 @@ latest_day_data = {{latest_day_data}}
 
 qa_system_prompt = '''对于用户提出的所有请求，首先输出不含内容的标签<think></think>，然后进行回答。
 
-请使用中文回答问题。
-
-
 # ROLE AND GOAL
 You are a highly intelligent and empathetic personal assistant AI for a life-logging application. Your primary goal is to help the user understand their own life events and feelings by answering their questions based *exclusively* on the contextual information provided from their logs.
 
@@ -201,19 +198,25 @@ User Question: "{{user_query}}"
 '''
 
 
-def llm_gen_conversation_summary(llm_service, json_content):
+def llm_gen_conversation_summary(llm_service, json_content, model_name=None):
     summary_prompt_str = summary_prompt_template.replace('{{json_str}}', json.dumps(json_content, indent=2, ensure_ascii=False))
-    summary_content = llm_service.chat(summary_system_prompt, summary_prompt_str)
+    summary_content = llm_service.chat(summary_system_prompt, summary_prompt_str, model_name=model_name)
     return summary_content
 
 
-def llm_gen_memory(llm_service, historical_data, latest_day_data):
+def llm_gen_memory(llm_service, historical_data, latest_day_data, model_name=None):
     memory_prompt_str = memory_prompt_template.replace('{{historical_data}}', json.dumps(historical_data, indent=2, ensure_ascii=False)).replace('{{latest_day_data}}', json.dumps(latest_day_data, indent=2, ensure_ascii=False))
-    memory_content = llm_service.chat(memory_system_prompt, memory_prompt_str)
+    memory_content = llm_service.chat(memory_system_prompt, memory_prompt_str, model_name=model_name)
     return memory_content
 
   
-def llm_get_qa_answer(llm_service, current_memory, retrieved_contexts, user_query):
-    qa_prompt_str = qa_prompt_template.replace('{{current_memory}}', current_memory).replace('{{retrieved_contexts}}', retrieved_contexts).replace('{{user_query}}', user_query)
-    qa_content = llm_service.chat(qa_system_prompt, qa_prompt_str)
+def llm_get_qa_answer(llm_service, current_memory, retrieved_contexts, user_query, model_name=None):
+    chinese_chars = sum(1 for c in user_query if '\u4e00' <= c <= '\u9fff')
+    total_chars = max(len(user_query), 1)
+    if chinese_chars / total_chars > 0.3:  # 中文占比超过30%判定为中文问题
+        qa_prompt_str = qa_prompt_template.replace('{{current_memory}}', current_memory).replace('{{retrieved_contexts}}', retrieved_contexts).replace('{{user_query}}', user_query)
+        qa_content = llm_service.chat(qa_system_prompt, qa_prompt_str, model_name=model_name)
+    else:
+        qa_prompt_str = qa_prompt_template.replace('{{current_memory}}', current_memory).replace('{{retrieved_contexts}}', retrieved_contexts).replace('{{user_query}}', user_query)
+        qa_content = llm_service.chat(qa_system_prompt, qa_prompt_str, model_name=model_name)
     return qa_content

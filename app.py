@@ -1,9 +1,10 @@
 import os
 import json
+import time
 from flask import Flask, render_template, redirect, url_for, flash, request, jsonify
 from extensions import db
 from flask_wtf import FlaskForm
-from wtforms import TextAreaField, FileField, SubmitField, StringField, PasswordField
+from wtforms import TextAreaField, FileField, SubmitField, StringField, PasswordField, SelectField
 from wtforms.validators import DataRequired, Length
 from datetime import datetime
 from dotenv import load_dotenv
@@ -12,6 +13,8 @@ from werkzeug.utils import secure_filename
 from services.llm_service import llm_service
 from models import Conversation, Event, Action, Memory, User
 from services.db_service import add_conversation, get_all_conversations, clear_conversations, clear_all_data, get_latest_memory, add_memory
+import threading
+from flask import copy_current_request_context
 
 from fake_data import fake_summary, fake_memory
 
@@ -39,6 +42,7 @@ class UploadForm(FlaskForm):
 
 class QAForm(FlaskForm):
     question = TextAreaField('问题', validators=[DataRequired()])
+    model = SelectField('模型选择', choices=[(model, model) for model in llm_service.model_configs.keys()], validators=[DataRequired()])
     submit = SubmitField('获取回答')
 
 class AudioUploadForm(FlaskForm):
@@ -107,6 +111,7 @@ def index():
         # extract daily information
         try:
             summary = llm_service.generate_summary(content)
+            # summary = json.dumps({'topics': 'debug summary'})
         except Exception as e:
             flash(f'生成摘要失败: {str(e)}', 'danger')
             return redirect(url_for('index'))
@@ -114,20 +119,46 @@ def index():
         # summary = fake_summary
         # add_conversation(content, summary)
         
-        # update long-term memory
-        latest_memory = get_latest_memory()
-        if latest_memory:
-            memory_topics = json.loads(latest_memory.content)['topics']
-            latest_day_topics = json.loads(summary)['topics']
-            new_memory = llm_service.generate_memory(memory_topics, latest_day_topics)
-        else:
-            new_memory = json.dumps({'topics': json.loads(summary)['topics']}, ensure_ascii=False)
-        add_memory(new_memory)
-        # new_memory = fake_memory
-        # add_memory(new_memory)
-        
-        # flash('对话已成功上传并处理！', 'success')
-        return redirect(url_for('current_event'))
+        # 启动后台线程更新长期记忆
+        def update_memory_background(user_id):
+            try:
+                with app.app_context():
+                    print(f'debug set memory_updating to True')
+                    user = User.query.get(user_id)
+                    if user:
+                        user.memory_updating = True
+                        db.session.commit()
+                    latest_memory = get_latest_memory()
+                    if latest_memory:
+                        memory_topics = json.loads(latest_memory.content)['topics']
+                        latest_day_topics = json.loads(summary)['topics']
+                        new_memory = llm_service.generate_memory(memory_topics, latest_day_topics)
+                    else:
+                        new_memory = json.dumps({'topics': json.loads(summary)['topics']}, ensure_ascii=False)
+                    add_memory(new_memory)
+                    # 设置内存更新完成标志
+                    print(f'debug set memory_updating to False')
+                    user = User.query.get(user_id)
+                    if user:
+                        user.memory_updating = False
+                        db.session.commit()
+            except Exception as e:
+                app.logger.error(f'后台更新记忆失败: {str(e)}')
+            finally:
+                print(f'debug set memory_updating to False')
+                # 无论成功失败，都清除更新中标志
+                with app.app_context():
+                    user = User.query.get(user_id)
+                    if user:
+                        user.memory_updating = False
+                        db.session.commit()
+
+        # 启动后台线程
+        memory_thread = threading.Thread(target=update_memory_background, args=(g.current_user.id,))
+        memory_thread.start()
+
+        # 立即跳转到daily页面
+        return redirect(url_for('daily'))
     return render_template('index.html', form=form)
 
 
@@ -144,8 +175,12 @@ def current_event():
                 details=topic.get('summary', '')
             )
             event_list.append(event)
-    # print(event_list)
-    return render_template('current_event.html', event_list=event_list)
+    
+    # 检查内存更新状态
+    memory_updating = g.current_user.memory_updating if g.current_user else False
+    print(f'debug memory_updating: {memory_updating}')
+
+    return render_template('current_event.html', event_list=event_list, memory_updating=memory_updating)
 
 
 @app.route('/daily')
@@ -253,37 +288,42 @@ def audio_upload():
 def qa():
     form = QAForm()
     answer = None
-    if request.headers.get('X-Requested-With') == 'XMLHttpRequest' and form.validate_on_submit():
-        question = form.question.data
-        try:
-            memory_topics = {}
-            latest_memory = get_latest_memory()
-            if latest_memory:
-                memory_topics = json.loads(latest_memory.content)['topics']
-            conversations = get_all_conversations()
-            content_list = []
-            for conv in conversations:
-                content = conv.content
-                content_list.append(content)
-            answer = llm_service.generate_answer(question, memory_topics, content_list)
-            return jsonify({'status': 'success', 'answer': answer})
-        except Exception as e:
-            return jsonify({'status': 'error', 'message': f'获取回答失败: {str(e)}'})
-    elif form.validate_on_submit():
-        question = form.question.data
-        try:
-            memory_topics = {}
-            latest_memory = get_latest_memory()
-            if latest_memory:
-                memory_topics = json.loads(latest_memory.content)['topics']
-            conversations = get_all_conversations()
-            content_list = []
-            for conv in conversations:
-                content = conv.content
-                content_list.append(content)
-            answer = llm_service.generate_answer(question, memory_topics, content_list)
-        except Exception as e:
-            flash(f'获取回答失败: {str(e)}', 'danger')
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        if form.validate_on_submit():
+            question = form.question.data
+            model = form.model.data
+            try:
+                memory_topics = {}
+                latest_memory = get_latest_memory()
+                if latest_memory:
+                    memory_topics = json.loads(latest_memory.content)['topics']
+                conversations = get_all_conversations()
+                content_list = []
+                for conv in conversations:
+                    content = conv.content
+                    content_list.append(content)
+                answer = llm_service.generate_answer(question, memory_topics, content_list, model_name=model)
+                return jsonify({'status': 'success', 'answer': answer})
+            except Exception as e:
+                return jsonify({'status': 'error', 'message': f'获取回答失败: {str(e)}'})
+        else:
+            return jsonify({'status': 'error', 'message': '表单验证失败', 'errors': form.errors})
+    # elif form.validate_on_submit():
+    #     question = form.question.data
+    #     model = form.model.data
+    #     try:
+    #         memory_topics = {}
+    #         latest_memory = get_latest_memory()
+    #         if latest_memory:
+    #             memory_topics = json.loads(latest_memory.content)['topics']
+    #         conversations = get_all_conversations()
+    #         content_list = []
+    #         for conv in conversations:
+    #             content = conv.content
+    #             content_list.append(content)
+    #         answer = llm_service.generate_answer(question, memory_topics, content_list, model_name=model)
+    #     except Exception as e:
+    #         flash(f'获取回答失败: {str(e)}', 'danger')
     return render_template('qa.html', form=form, answer=answer)
 
 # 创建数据库表

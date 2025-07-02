@@ -16,19 +16,20 @@ class LLMService:
             base_url="https://ark.cn-beijing.volces.com/api/v3",
             api_key=os.getenv("ARK_API_KEY"),
         )
-        self.conf = {
-            "model_name": "doubao-seed-1-6-250615",
-            "max_tokens": 32768,
+        self.default_model = "doubao-seed-1-6-250615"
+        self.model_configs = {
+            "doubao-seed-1-6-250615": {"max_tokens": 32768},
+            # 可添加更多模型配置
         }
 
-    def call_openai_api_with_retry(self, messages, max_retries=3, delay=5):
+    def call_openai_api_with_retry(self, messages, model, max_retries=3, delay=5):
         retries = 0
         while retries < max_retries:
             try:
                 # if self.model == 'doubao-1.6':
                 #     response = self.model_client.chat.completions.create(model=self.conf["model_name"], messages=messages, max_tokens=self.conf["max_tokens"], thinking={"type":"disabled"})
                 # else:
-                response = self.model_client.chat.completions.create(model=self.conf["model_name"], messages=messages)
+                response = self.model_client.chat.completions.create(model=model, messages=messages)
                 return response
             # except openai.OpenAIError as e:
             #     print(f"OpenAI error occurred: {e}")
@@ -40,15 +41,18 @@ class LLMService:
             time.sleep(_delay)
         raise Exception("API call failed after maximum retries")
 
-    def chat(self, system_prompt, prompt):
+    def chat(self, system_prompt, prompt, model_name=None):
         messages = []
         if len(system_prompt) > 0:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
         try:
-            response = self.call_openai_api_with_retry(messages)
+            model = model_name or self.default_model
+            if model not in self.model_configs:
+                raise ValueError(f"Unsupported model: {model}")
+            response = self.call_openai_api_with_retry(messages, model=model)
             call_llm_log = {
-                "model": self.conf["model_name"],
+                "model": model,
                 "messages": messages,
                 "response": response.choices[0].message.content.strip()
             }
@@ -60,17 +64,17 @@ class LLMService:
             print(f"Final error: {e}")
             return ''
 
-    def generate_summary(self, conversation_content):
-        return llm_gen_conversation_summary(self, conversation_content)
+    def generate_summary(self, conversation_content, model_name=None):
+        return llm_gen_conversation_summary(self, conversation_content, model_name=model_name)
 
-    def generate_memory(self, historical_data, latest_day_data):
-        return llm_gen_memory(self, historical_data, latest_day_data)
+    def generate_memory(self, historical_data, latest_day_data, model_name=None):
+        return llm_gen_memory(self, historical_data, latest_day_data, model_name=model_name)
 
-    def generate_answer(self, question, current_memory, retrived_contexts):
+    def generate_answer(self, question, current_memory, retrived_contexts, model_name=None):
         # return f"answer of {question}"
         current_memory_json = json.dumps(current_memory, indent=2, ensure_ascii=False)
         retrived_contexts_str = '\n\n'.join(retrived_contexts)
-        return llm_get_qa_answer(self, current_memory_json, retrived_contexts_str, question)
+        return llm_get_qa_answer(self, current_memory_json, retrived_contexts_str, question, model_name=model_name)
 
 
 llm_service = LLMService()
