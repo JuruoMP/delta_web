@@ -102,28 +102,22 @@ def index():
         content = form.conversation_text.data
         try:
             line0 = content.split('\n', 1)[0].strip()
-            print(f'line0: {line0}')
             script_time = datetime.strptime(line0, "%Y-%m-%d")
         except:
             script_time = datetime.now()
-        print(f'script_time: {script_time}')
         
         # extract daily information
         try:
             summary = llm_service.generate_summary(content)
-            # summary = json.dumps({'topics': 'debug summary'})
         except Exception as e:
             flash(f'生成摘要失败: {str(e)}', 'danger')
             return redirect(url_for('index'))
         add_conversation(content, summary, script_time)
-        # summary = fake_summary
-        # add_conversation(content, summary)
         
         # 启动后台线程更新长期记忆
         def update_memory_background(user_id):
             try:
                 with app.app_context():
-                    print(f'debug set memory_updating to True')
                     user = User.query.get(user_id)
                     if user:
                         user.memory_updating = True
@@ -137,7 +131,6 @@ def index():
                         new_memory = json.dumps({'topics': json.loads(summary)['topics']}, ensure_ascii=False)
                     add_memory(new_memory)
                     # 设置内存更新完成标志
-                    print(f'debug set memory_updating to False')
                     user = User.query.get(user_id)
                     if user:
                         user.memory_updating = False
@@ -145,7 +138,6 @@ def index():
             except Exception as e:
                 app.logger.error(f'后台更新记忆失败: {str(e)}')
             finally:
-                print(f'debug set memory_updating to False')
                 # 无论成功失败，都清除更新中标志
                 with app.app_context():
                     user = User.query.get(user_id)
@@ -178,7 +170,6 @@ def current_event():
     
     # 检查内存更新状态
     memory_updating = g.current_user.memory_updating if g.current_user else False
-    print(f'debug memory_updating: {memory_updating}')
 
     return render_template('current_event.html', event_list=event_list, memory_updating=memory_updating)
 
@@ -214,7 +205,6 @@ def daily():
                 task=action.get('task', '')
             )
             action_list.append(action)
-        # print(action_list)
         daily_conversations[date_key].append((event_list, action_list, conv))
     
     return render_template('daily.html', daily_conversations=daily_conversations)
