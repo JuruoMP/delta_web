@@ -43,7 +43,12 @@
                                                     <div class="list">
                                                         <div class="bg-success bg-opacity-10 p-4 rounded mt-4 border border-success shadow-sm mb-4">
                                                             <strong><i class="bi bi-check2-square text-success me-2 fs-4"></i>Owner: {{ action.owner }}<p></p></strong>
-                                                            Task: {{ action.task }}
+                                                            <strong>Task:</strong>
+                                                            <ul class="list-disc pl-5">
+                                                                {% for item in action.task.split('\n') if item.strip() %}
+                                                                    <li>{{ item.strip() }}</li>
+                                                                {% endfor %}
+                                                            </ul>
                                                         </div>
                                                     </div>
                                                     {% endfor %}
