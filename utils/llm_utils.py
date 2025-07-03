@@ -185,17 +185,14 @@ User Question: "{{user_query}}"
 
 # ANSWER GUIDELINES
 1. **Contextual Anchoring:** Begin by identifying which parts of the context are most relevant to the question (e.g., specific topics from summaries or timestamps from transcripts)
-2. **Evidence-Based Response:** For each key point in your answer, explicitly reference the source context using [Summary Topic: X] or [Transcript: Timestamp] notation
-3. **Direct Quotation:** When mentioning specific statements or feelings, include verbatim quotes from raw transcripts in quotation marks
-4. **Structured Organization:** Group related information together and present in a logical sequence
-5. **Explicit Limitations:** If the context contains conflicting information, acknowledge this explicitly
-6. **LANGUAGE: Use SIMPLIFIED CHINESE for all extracted content
+2. **Structured Organization:** Group related information together and present in a logical sequence
+3. **Explicit Limitations:** If the context contains conflicting information, acknowledge this explicitly
+4. **LANGUAGE: Use SIMPLIFIED CHINESE for all extracted content
 
 # RULES AND CONSTRAINTS
 1.  **Primarily Grounded:** Base your answer primarily on the information within the "[START OF CONTEXT]" section. Synthesize information from both the summaries and the raw transcripts. You may use appropriate reasoning and common external knowledge to enhance the answer when necessary.
 2.  **Prioritize Raw Text for Details:** When quoting or describing specific feelings or events, rely on the "Raw Transcript Snippet".
-3.  **Acknowledge Limits:** If the provided context does not contain enough information, you MUST respond with: "I'm sorry, but I couldn't find specific information about that in your logs." Do not try to guess.
-4.  **Tone & Style:** Respond in a helpful, respectful, and conversational tone. Address the user directly using "you" and "your".
+3.  **Tone & Style:** Respond in a helpful, respectful, and conversational tone. Address the user directly using "you" and "your".
 
 # YOUR ANSWER:
 '''
@@ -218,17 +215,14 @@ qa_prompt_template_zh = '''
 
 # 回答指南
 1. **上下文锚定**：首先确定上下文中与问题最相关的部分（例如，摘要中的特定主题或 transcripts 中的时间戳）
-2. **基于证据的回答**：对于回答中的每个要点，使用 [摘要主题: X] 或 [对话记录: 时间戳] 标记明确引用来源上下文
-3. **直接引用**：提及具体陈述或感受时，用引号包含对话记录中的原文
-4. **结构化组织**：将相关信息分组，并按逻辑顺序呈现
-5. **明确局限性**：如果上下文包含冲突信息，需明确承认
-6. **语言：使用简体中文**
+2. **结构化组织**：将相关信息分组，并按逻辑顺序呈现
+3. **明确局限性**：如果上下文包含冲突信息，需明确承认
+4. **语言：使用简体中文**
 
 # 规则与约束
 1.  **主要基于上下文**：回答应主要基于"[START OF CONTEXT]"部分中的信息。综合摘要和原始对话记录中的信息。必要时可使用适当的推理和通用外部知识来增强回答。
 2.  **细节优先使用原始文本**：引用或描述具体感受或事件时，优先使用"原始对话片段"。
-3.  **承认局限性**：如果提供的上下文信息不足，必须回答："抱歉，在您的日志中未找到相关具体信息。" 不要猜测。
-4.  **语气与风格**：回答应友好、尊重且口语化。直接使用"您"称呼用户。
+3.  **语气与风格**：回答应友好、尊重且口语化。直接使用"您"称呼用户。
 
 # 您的回答：
 '''
