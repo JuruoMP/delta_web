@@ -5,7 +5,6 @@ import requests
 import time
 from dotenv import load_dotenv
 from volcenginesdkarkruntime import Ark
-from utils.llm_utils import llm_gen_conversation_summary, llm_gen_memory, llm_get_qa_answer
 
 # 加载环境变量
 load_dotenv()
@@ -82,20 +81,17 @@ class LLMService:
             print(f"Final error: {e}")
             return ''
 
-    def generate_summary(self, conversation_content, model_name=None):
-        return llm_gen_conversation_summary(self, conversation_content, model_name=model_name)
+    # def generate_summary(self, conversation_content, model_name=None):
+    #     return llm_gen_conversation_summary(self, conversation_content, model_name=model_name)
 
-    def generate_memory(self, historical_data, latest_day_data, model_name=None):
-        return llm_gen_memory(self, historical_data, latest_day_data, model_name=model_name)
+    # def generate_memory(self, historical_data, latest_day_data, model_name=None):
+    #     return llm_gen_memory(self, historical_data, latest_day_data, model_name=model_name)
 
-    def generate_answer(self, question, current_memory, retrived_contexts, model_name=None):
-        # return f"answer of {question}"
-        current_memory_json = json.dumps(current_memory, indent=2, ensure_ascii=False)
-        retrived_contexts_str = '\n\n'.join(retrived_contexts)
-        return llm_get_qa_answer(self, current_memory_json, retrived_contexts_str, question, model_name=model_name)
-
-
-llm_service = LLMService()
+    # def generate_answer(self, question, current_memory, retrived_contexts, model_name=None):
+    #     # return f"answer of {question}"
+    #     current_memory_json = json.dumps(current_memory, indent=2, ensure_ascii=False)
+    #     retrived_contexts_str = '\n\n'.join(retrived_contexts)
+    #     return llm_get_qa_answer(self, current_memory_json, retrived_contexts_str, question, model_name=model_name)
 
 
 if __name__ == "__main__":

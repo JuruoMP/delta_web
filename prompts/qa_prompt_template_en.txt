@@ -1,0 +1,27 @@
+---
+[START OF CONTEXT]
+
+{{current_memory}}
+
+{{retrieved_contexts}}
+
+[END OF CONTEXT]
+---
+
+# USER'S QUESTION
+Now, based strictly on the context provided above, please answer the following user's question.
+
+User Question: "{{user_query}}"
+
+# ANSWER GUIDELINES
+1. **Contextual Anchoring:** Begin by identifying which parts of the context are most relevant to the question (e.g., specific topics from summaries or timestamps from transcripts)
+2. **Structured Organization:** Group related information together and present in a logical sequence
+3. **Explicit Limitations:** If the context contains conflicting information, acknowledge this explicitly
+4. **LANGUAGE: Use SIMPLIFIED CHINESE for all extracted content
+
+# RULES AND CONSTRAINTS
+1.  **Primarily Grounded:** Base your answer primarily on the information within the "[START OF CONTEXT]" section. Synthesize information from both the summaries and the raw transcripts. You may use appropriate reasoning and common external knowledge to enhance the answer when necessary.
+2.  **Prioritize Raw Text for Details:** When quoting or describing specific feelings or events, rely on the "Raw Transcript Snippet".
+3.  **Tone & Style:** Respond in a helpful, respectful, and conversational tone. Address the user directly using "you" and "your".
+
+# YOUR ANSWER:

@@ -1,41 +1,50 @@
 import os
 import json
 import time
-from flask import Flask, render_template, redirect, url_for, flash, request, jsonify
-from extensions import db
+import threading
+from datetime import datetime
+from functools import wraps
+from flask import Flask, render_template, redirect, url_for, flash, request, jsonify, session, g
 from flask_wtf import FlaskForm
 from wtforms import TextAreaField, FileField, SubmitField, StringField, PasswordField, SelectField
 from wtforms.validators import DataRequired, Length
-from datetime import datetime
-from dotenv import load_dotenv
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-from services.llm_service import llm_service
+from dotenv import load_dotenv
+
+# 本地导入
+from extensions import db
 from models import Conversation, Event, Action, Memory, User
-from services.db_service import add_conversation, get_all_conversations, clear_conversations, clear_all_data, get_latest_memory, add_memory
-import threading
-from flask import copy_current_request_context
+from services.db_service import (
+    add_conversation, get_all_conversations, clear_conversations,
+    clear_all_data, get_latest_memory, add_memory
+)
+from services.llm_service import LLMService
+from utils.llm_utils import LLMUtils
 
-from fake_data import fake_summary, fake_memory
-
-# 加载环境变量
+# 配置加载
 load_dotenv()
 
-# 初始化Flask应用
+class Config:
+    SECRET_KEY = os.getenv('SECRET_KEY', 'dev_key_for_testing')
+    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URI', 'sqlite:///conversations.db')
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+    ALLOWED_EXTENSIONS = {'wav', 'mp3', 'ogg'}
+
+# 应用初始化
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev_key_for_testing')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URI', 'sqlite:///conversations.db')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config.from_object(Config)
 
 db.init_app(app)
+llm_service = LLMService()
+llm_utils = LLMUtils(llm_service)
 
-# 登录表单
+# 表单定义
 class LoginForm(FlaskForm):
     username = StringField('用户名', validators=[DataRequired(), Length(min=4, max=80)])
     password = PasswordField('密码', validators=[DataRequired()])
     submit = SubmitField('登录')
 
-# 上传表单
 class UploadForm(FlaskForm):
     conversation_text = TextAreaField('对话文本', validators=[DataRequired()])
     submit = SubmitField('提交处理')
@@ -49,8 +58,9 @@ class AudioUploadForm(FlaskForm):
     audio_file = FileField('音频文件', validators=[DataRequired()])
     submit = SubmitField('上传并处理')
 
-from functools import wraps
-from flask import session, g
+# 工具函数
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in Config.ALLOWED_EXTENSIONS
 
 # 登录保护装饰器
 def login_required(f):
@@ -62,7 +72,7 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# 加载当前用户
+# 请求钩子
 @app.before_request
 def load_current_user():
     if 'user_id' in session:
@@ -70,29 +80,31 @@ def load_current_user():
     else:
         g.current_user = None
 
-# 登录路由
+# 路由函数
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if 'user_id' in session:
         return redirect(url_for('index'))
     form = LoginForm()
     if form.validate_on_submit():
-        user = User.query.filter_by(username=form.username.data).first()
-        if user and user.check_password(form.password.data):
-            session['user_id'] = user.id
-            flash('登录成功！', 'success')
-            return redirect(url_for('index'))
-        flash('用户名或密码不正确', 'danger')
+        try:
+            user = User.query.filter_by(username=form.username.data).first()
+            if user and user.check_password(form.password.data):
+                session['user_id'] = user.id
+                flash('登录成功！', 'success')
+                return redirect(url_for('index'))
+            flash('用户名或密码不正确', 'danger')
+        except Exception as e:
+            app.logger.error(f'登录处理失败: {str(e)}')
+            flash('登录过程中发生错误，请稍后重试', 'danger')
     return render_template('login.html', form=form)
 
-# 登出路由
 @app.route('/logout')
 def logout():
     session.pop('user_id', None)
     flash('已成功登出', 'success')
     return redirect(url_for('login'))
 
-# 路由
 @app.route('/', methods=['GET', 'POST'])
 @login_required
 def index():
@@ -101,113 +113,147 @@ def index():
     if form.validate_on_submit():
         content = form.conversation_text.data
         try:
+            # 解析日期
             line0 = content.split('\n', 1)[0].strip()
             script_time = datetime.strptime(line0, "%Y-%m-%d")
-        except:
+        except (ValueError, IndexError):
             script_time = datetime.now()
-        
-        # extract daily information
+            app.logger.warning('无法解析日期，使用当前时间')
+
         try:
-            summary = llm_service.generate_summary(content)
+            # 生成摘要
+            summary = llm_utils.gen_conversation_summary(content)
+            add_conversation(content, summary, script_time)
+            flash('对话已成功处理', 'success')
+
+            # 启动后台线程更新长期记忆
+            @copy_current_request_context
+            def update_memory_background(user_id):
+                try:
+                    with app.app_context():
+                        user = User.query.get(user_id)
+                        if user:
+                            user.memory_updating = True
+                            db.session.commit()
+
+                        latest_memory = get_latest_memory()
+                        if latest_memory:
+                            memory_topics = json.loads(latest_memory.content)['topics']
+                            latest_day_topics = json.loads(summary)['topics']
+                            new_memory = llm_utils.gen_memory(memory_topics, latest_day_topics)
+                        else:
+                            new_memory = json.dumps({'topics': json.loads(summary)['topics']}, ensure_ascii=False)
+
+                        add_memory(new_memory)
+                        app.logger.info('记忆更新成功')
+
+                        # 更新用户状态
+                        with app.app_context():
+                            user = User.query.get(user_id)
+                            if user:
+                                user.memory_updating = False
+                                db.session.commit()
+                except Exception as e:
+                    app.logger.error(f'后台更新记忆失败: {str(e)}')
+                    # 确保清除更新状态
+                    with app.app_context():
+                        user = User.query.get(user_id)
+                        if user:
+                            user.memory_updating = False
+                            db.session.commit()
+
+            # 启动后台线程
+            memory_thread = threading.Thread(target=update_memory_background, args=(g.current_user.id,))
+            memory_thread.start()
+
+            return redirect(url_for('daily'))
         except Exception as e:
-            flash(f'生成摘要失败: {str(e)}', 'danger')
-            return redirect(url_for('index'))
-        add_conversation(content, summary, script_time)
-        
-        # 启动后台线程更新长期记忆
-        def update_memory_background(user_id):
-            try:
-                with app.app_context():
-                    user = User.query.get(user_id)
-                    if user:
-                        user.memory_updating = True
-                        db.session.commit()
-                    latest_memory = get_latest_memory()
-                    if latest_memory:
-                        memory_topics = json.loads(latest_memory.content)['topics']
-                        latest_day_topics = json.loads(summary)['topics']
-                        new_memory = llm_service.generate_memory(memory_topics, latest_day_topics)
-                    else:
-                        new_memory = json.dumps({'topics': json.loads(summary)['topics']}, ensure_ascii=False)
-                    add_memory(new_memory)
-                    # 设置内存更新完成标志
-                    user = User.query.get(user_id)
-                    if user:
-                        user.memory_updating = False
-                        db.session.commit()
-            except Exception as e:
-                app.logger.error(f'后台更新记忆失败: {str(e)}')
-            finally:
-                # 无论成功失败，都清除更新中标志
-                with app.app_context():
-                    user = User.query.get(user_id)
-                    if user:
-                        user.memory_updating = False
-                        db.session.commit()
+            app.logger.error(f'处理对话失败: {str(e)}')
+            flash(f'处理对话时发生错误: {str(e)}', 'danger')
 
-        # 启动后台线程
-        memory_thread = threading.Thread(target=update_memory_background, args=(g.current_user.id,))
-        memory_thread.start()
-
-        # 立即跳转到daily页面
-        return redirect(url_for('daily'))
     return render_template('index.html', form=form)
 
 
 @app.route('/current-event')
 @login_required
 def current_event():
-    memory = get_latest_memory()
-    event_list = []
-    if memory:
-        for topic in json.loads(memory.content)['topics']:
-            event = Event(
-                date=datetime.now(),
-                title=topic.get('title', ''),
-                details=topic.get('summary', '')
-            )
-            event_list.append(event)
-    
+    try:
+        memory = get_latest_memory()
+        event_list = []
+        if memory:
+            memory_data = json.loads(memory.content)
+            for topic in memory_data.get('topics', []):
+                event = Event(
+                    date=datetime.now(),
+                    title=topic.get('title', ''),
+                    details=topic.get('summary', '')
+                )
+                event_list.append(event)
+    except Exception as e:
+        app.logger.error(f'获取当前事件失败: {str(e)}')
+        flash('获取当前事件时发生错误', 'danger')
+        event_list = []
+
     # 检查内存更新状态
     memory_updating = g.current_user.memory_updating if g.current_user else False
 
     return render_template('current_event.html', event_list=event_list, memory_updating=memory_updating)
 
-
 @app.route('/daily')
 @login_required
 def daily():
-    # 查询所有对话并按日期分组
-    conversations = get_all_conversations()
+    try:
+        # 查询所有对话并按日期分组
+        conversations = get_all_conversations()
+        
+        # 按日期分组处理
+        daily_conversations = {}
+        for conv in conversations:
+            date_key = conv.created_at.strftime('%Y-%m-%d')
+            if date_key not in daily_conversations:
+                daily_conversations[date_key] = []
+            
+            # 解析摘要数据
+            try:
+                conv_summary = json.loads(conv.summary)
+                conv_topics = conv_summary.get('topics', [])
+                conv_actions = conv_summary.get('action_items', [])
+            except json.JSONDecodeError:
+                app.logger.warning(f'对话摘要解析失败: {conv.id}')
+                conv_topics = []
+                conv_actions = []
+            
+            # 限制显示的主题和行动项数量
+            num_topic = hash(date_key) % 2 + 2
+            num_action = hash(date_key) % 3 + 2
+            
+            event_list = []
+            for topic in conv_topics[:num_topic]:
+                event = Event(
+                    date=conv.created_at,
+                    title=topic.get('title', ''),
+                    details=topic.get('summary', '')
+                )
+                event_list.append(event)
+            
+            action_list = []
+            for action in conv_actions[:num_action]:
+                action_item = Action(
+                    owner=action.get('owner', ''),
+                    task=action.get('task', '')
+                )
+                action_list.append(action_item)
+            
+            daily_conversations[date_key].append((event_list, action_list, conv))
+        
+        # 按日期降序排序
+        sorted_dates = sorted(daily_conversations.keys(), reverse=True)
+        return render_template('daily.html', daily_conversations=daily_conversations, sorted_dates=sorted_dates)
     
-    # 按日期分组处理
-    daily_conversations = {}
-    for conv in conversations:
-        date_key = conv.created_at.strftime('%Y-%m-%d')
-        if date_key not in daily_conversations:
-            daily_conversations[date_key] = []
-        conv_topics = json.loads(conv.summary).get('topics', [])
-        event_list = []
-        conv_actions = json.loads(conv.summary).get('action_items', [])
-        action_list = []
-        num_topic = hash(date_key) % 2 + 2
-        num_action = hash(date_key) % 3 + 2
-        for topic in conv_topics[:num_topic]:
-            event = Event(
-                date=conv.created_at,
-                title=topic.get('title', ''),
-                details=topic.get('summary', '')
-            )
-            event_list.append(event)
-        for action in conv_actions[:num_action]:
-            action = Action(
-                owner=action.get('owner', ''),
-                task=action.get('task', '')
-            )
-            action_list.append(action)
-        daily_conversations[date_key].append((event_list, action_list, conv))
-    
-    return render_template('daily.html', daily_conversations=daily_conversations)
+    except Exception as e:
+        app.logger.error(f'获取每日对话失败: {str(e)}')
+        flash('获取每日对话时发生错误', 'danger')
+        return render_template('daily.html', daily_conversations={}, sorted_dates=[])
 
 @app.route('/clear-database', methods=['POST'])
 @login_required

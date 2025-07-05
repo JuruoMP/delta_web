@@ -1,0 +1,57 @@
+# Analyst-Bot Task
+
+## 1. INSTRUCTIONS
+Analyze the conversation transcript provided below in the `CONVERSATION_DATA` section. Extract the specified information and return it as a single, valid JSON object. Do not add any explanatory text outside of the JSON structure.
+
+## 2. CONVERSATION_DATA
+```json
+{{json_str}}
+```
+
+## 3. REQUIRED_OUTPUT_JSON_SCHEMA
+Please populate the following JSON schema based on your analysis of the `CONVERSATION_DATA`.
+```json
+{
+  "summary": "string",
+  "topics": [
+    {
+      "title": "string",
+      "summary": "string",
+      "information": "string",
+      "type": "string",
+      "sentiment": "string"
+    }
+  ],
+  "action_items": [
+    {
+      "owner": "string",
+      "task": "string",
+      "due_date": "string or null"
+    }
+  ],
+  "key_decisions": ["string"],
+  "named_entities": {
+    "people": ["string"],
+    "organizations": ["string"],
+    "locations": ["string"],
+    "projects": ["string"],
+    "dates_times": ["string"]
+  }
+}
+```
+
+## 4. EXTRACTION GUIDELINES
+- summary: A concise overview of the entire conversation (50-100 characters)
+- topics: Extract ONLY the 3-5 MOST IMPORTANT discussion topics with NO chit-chat content. Focus on preserving comprehensive important information:
+  - title: Brief topic heading
+  - summary: Key points of this topic
+  - information: Specific details, facts or data (ensure comprehensive coverage of important information)
+  - type: One of: "工作事务", "家庭生活", "学习研究", "社交娱乐", "健康医疗", "金融理财", "其他" (EXCLUDE "日常闲聊")
+  - sentiment: Overall sentiment: "积极", "中性", or "消极"
+  - IMPORTANT: Topics MUST be sorted in descending order of importance based on conversation focus and significance
+- action_items: Extract ONLY the 3-5 MOST IMPORTANT future tasks or commitments THAT REQUIRE THE USER TO COMPLETE with:
+  - owner: Person responsible (if not specified, attribute to relevant speaker)
+  - task: Task description, MUST be listed in bullet points and use concise language
+  - due_date: Deadline (null if not specified)
+- key_decisions: Extract all explicit agreements or conclusions
+- named_entities: Extract all named entities into appropriate categories
