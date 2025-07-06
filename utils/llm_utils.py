@@ -31,14 +31,17 @@ class LLMUtils:
         memory_prompt_str = self.memory_prompt_template.replace('{{historical_data}}', json.dumps(historical_data, indent=2, ensure_ascii=False)).replace('{{latest_day_data}}', json.dumps(latest_day_data, indent=2, ensure_ascii=False))
         return self.llm_service.chat(self.memory_system_prompt, memory_prompt_str, model_name=model_name)
 
-    def get_qa_answer(self, current_memory, retrieved_contexts, user_query, model_name=None):
+    def get_qa_answer(self, user_query, current_memory, retrieved_contexts, model_name=None):
         chinese_chars = sum(1 for c in user_query if '\u4e00' <= c <= '\u9fff')
         total_chars = max(len(user_query), 1)
+
+        current_memory_json = json.dumps(current_memory, indent=2, ensure_ascii=False)
+        retrived_contexts_str = '\n\n'.join(retrieved_contexts)
         
         if chinese_chars / total_chars > 0.3:  # 中文占比超过30%判定为中文问题
-            qa_prompt_str = self.qa_prompt_template_zh.replace('{{current_memory}}', current_memory).replace('{{retrieved_contexts}}', retrieved_contexts).replace('{{user_query}}', user_query)
+            qa_prompt_str = self.qa_prompt_template_zh.replace('{{current_memory}}', current_memory_json).replace('{{retrieved_contexts}}', retrived_contexts_str).replace('{{user_query}}', user_query)
         else:
-            qa_prompt_str = self.qa_prompt_template_en.replace('{{current_memory}}', current_memory).replace('{{retrieved_contexts}}', retrieved_contexts).replace('{{user_query}}', user_query)
+            qa_prompt_str = self.qa_prompt_template_en.replace('{{current_memory}}', current_memory_json).replace('{{retrieved_contexts}}', retrived_contexts_str).replace('{{user_query}}', user_query)
         
         return self.llm_service.chat(self.qa_system_prompt, qa_prompt_str, model_name=model_name)
 

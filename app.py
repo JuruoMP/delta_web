@@ -4,7 +4,7 @@ import time
 import threading
 from datetime import datetime
 from functools import wraps
-from flask import Flask, render_template, redirect, url_for, flash, request, jsonify, session, g
+from flask import Flask, render_template, redirect, url_for, flash, request, jsonify, session, g, copy_current_request_context
 from flask_wtf import FlaskForm
 from wtforms import TextAreaField, FileField, SubmitField, StringField, PasswordField, SelectField
 from wtforms.validators import DataRequired, Length
@@ -338,7 +338,7 @@ def qa():
                 for conv in conversations:
                     content = conv.content
                     content_list.append(content)
-                answer = llm_service.generate_answer(question, memory_topics, content_list, model_name=model)
+                answer = llm_utils.get_qa_answer(question, memory_topics, content_list, model_name=model)
                 return jsonify({'status': 'success', 'answer': answer})
             except Exception as e:
                 return jsonify({'status': 'error', 'message': f'获取回答失败: {str(e)}'})
@@ -357,7 +357,7 @@ def qa():
     #         for conv in conversations:
     #             content = conv.content
     #             content_list.append(content)
-    #         answer = llm_service.generate_answer(question, memory_topics, content_list, model_name=model)
+    #         answer = llm_utils.get_qa_answer(question, memory_topics, content_list, model_name=model)
     #     except Exception as e:
     #         flash(f'获取回答失败: {str(e)}', 'danger')
     return render_template('qa.html', form=form, answer=answer)
