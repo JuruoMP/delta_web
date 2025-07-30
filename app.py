@@ -11,6 +11,7 @@ from wtforms.validators import DataRequired, Length
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
+from utils.memory_utils import MemoryBank
 
 # 本地导入
 from extensions import db
@@ -38,6 +39,8 @@ app.config.from_object(Config)
 db.init_app(app)
 llm_service = LLMService()
 llm_utils = LLMUtils(llm_service)
+memory_bank = MemoryBank()
+me = "user"
 
 # 表单定义
 class LoginForm(FlaskForm):
