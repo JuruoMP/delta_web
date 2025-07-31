@@ -36,11 +36,11 @@ class Config:
 app = Flask(__name__)
 app.config.from_object(Config)
 
+me = "user"
 db.init_app(app)
 llm_service = LLMService()
 llm_utils = LLMUtils(llm_service)
-memory_bank = MemoryBank()
-me = "user"
+memory_bank = MemoryBank(user=me)
 
 # 表单定义
 class LoginForm(FlaskForm):
