@@ -226,12 +226,8 @@ def daily():
                 conv_topics = []
                 conv_actions = []
             
-            # 限制显示的主题和行动项数量
-            num_topic = hash(date_key) % 2 + 2
-            num_action = hash(date_key) % 3 + 2
-            
             event_list = []
-            for topic in conv_topics[:num_topic]:
+            for topic in conv_topics:
                 event = Event(
                     date=conv.created_at,
                     title=topic.get('title', ''),
@@ -240,7 +236,7 @@ def daily():
                 event_list.append(event)
             
             action_list = []
-            for action in conv_actions[:num_action]:
+            for action in conv_actions:
                 action_item = Action(
                     owner=action.get('owner', ''),
                     task=action.get('task', '')
