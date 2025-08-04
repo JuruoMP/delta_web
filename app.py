@@ -2,6 +2,8 @@ import os
 import json
 import time
 import threading
+import signal
+import sys
 from datetime import datetime
 from functools import wraps
 from flask import Flask, render_template, redirect, url_for, flash, request, jsonify, session, g, copy_current_request_context
@@ -31,6 +33,7 @@ class Config:
     SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URI', 'sqlite:///conversations.db')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     ALLOWED_EXTENSIONS = {'wav', 'mp3', 'ogg'}
+    QA_MODE = 'MEM0'
 
 # 应用初始化
 app = Flask(__name__)
@@ -132,7 +135,7 @@ def index():
             # 启动后台线程更新长期记忆
             @copy_current_request_context
             def update_memory_background(user_id):
-                try:
+                if True: #try:
                     with app.app_context():
                         user = User.query.get(user_id)
                         if user:
@@ -148,7 +151,9 @@ def index():
                             new_memory = json.dumps({'topics': json.loads(summary)['topics']}, ensure_ascii=False)
 
                         add_memory(new_memory)
+                        memory_bank.add_memory('\n\n'.join(x['information'] for x in json.loads(summary)['topics']), created_date=script_time.isoformat())
                         app.logger.info('记忆更新成功')
+                        app.logger.info(f'最新的记忆：{memory_bank.get_all()}')
 
                         # 更新用户状态
                         with app.app_context():
@@ -156,7 +161,7 @@ def index():
                             if user:
                                 user.memory_updating = False
                                 db.session.commit()
-                except Exception as e:
+                else: #except Exception as e:
                     app.logger.error(f'后台更新记忆失败: {str(e)}')
                     # 确保清除更新状态
                     with app.app_context():
@@ -268,6 +273,7 @@ def clear_database():
     try:
         # 删除所有数据
         deletion_counts = clear_all_data()
+        memory_bank.delete_memory()
         print('Clear finished')
         return jsonify({
             'status': 'success', 
@@ -332,12 +338,18 @@ def qa():
                 latest_memory = get_latest_memory()
                 if latest_memory:
                     memory_topics = json.loads(latest_memory.content)['topics']
-                conversations = get_all_conversations()
-                content_list = []
-                for conv in conversations:
-                    content = conv.content
-                    content_list.append(content)
-                answer = llm_utils.get_qa_answer(question, memory_topics, content_list, model_name=model)
+                if Config.QA_MODE == 'RAW':
+                    conversations = get_all_conversations()
+                    content_list = []
+                    for conv in conversations:
+                        content = conv.content
+                        content_list.append(content)
+                    answer = llm_utils.get_qa_answer(question, memory_topics, content_list, model_name=model)
+                elif Config.QA_MODE == 'MEM0':
+                    content_list = memory_bank.extract_qa_memorries(question)
+                    answer = llm_utils.get_qa_answer_soft(question, memory_topics, content_list, model_name=model)
+                else:
+                    raise ValueError("QA_MODE 配置错误")
                 return jsonify({'status': 'success', 'answer': answer})
             except Exception as e:
                 return jsonify({'status': 'error', 'message': f'获取回答失败: {str(e)}'})
@@ -361,6 +373,26 @@ def qa():
     #         flash(f'获取回答失败: {str(e)}', 'danger')
     return render_template('qa.html', form=form, answer=answer)
 
+@app.route('/memories')
+@login_required
+def memories():
+    try:
+        all_memories = memory_bank.get_all()
+        # 格式化记忆数据以便模板使用
+        formatted_memories = []
+        for mem in sorted(all_memories['results'], key=lambda x: x['created_at'], reverse=True):
+            formatted_memories.append({
+                'content': mem['memory'],
+                'created_at': mem.get('created_at', 'Unknown date')
+            })
+    except Exception as e:
+        app.logger.error(f'获取记忆失败: {str(e)}')
+        flash('获取记忆时发生错误', 'danger')
+        formatted_memories = []
+    # 检查内存更新状态
+    memory_updating = g.current_user.memory_updating if g.current_user else False
+    return render_template('memories.html', memories=formatted_memories, memory_updating=memory_updating)
+
 # 创建数据库表
 with app.app_context():
     db.create_all()
@@ -382,6 +414,21 @@ with app.app_context():
         
         db.session.commit()
         print(f"已创建默认管理员用户: {admin_username}, 密码: {admin_password}")
+
+@app.teardown_appcontext
+def shutdown_memory_bank(exception=None):
+    global memory_bank
+    if 'memory_bank' in globals():
+        memory_bank.close()
+
+def signal_handler(sig, frame):
+    global memory_bank
+    if 'memory_bank' in globals():
+        memory_bank.close()
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
 
 if __name__ == '__main__':
     app.run(debug=True)

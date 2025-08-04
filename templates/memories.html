@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-5">
+    <h2>我的记忆库</h2>
+        {% if memory_updating %}
+            <div class="alert alert-warning">记忆正在更新中，请稍候...</div>
+        {% endif %}
+    <div class="memory-list mt-4">
+        {% if memories %}
+            {% for memory in memories %}
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h5 class="card-title">{{ memory.created_at }}</h5>
+                    <p class="card-text">{{ memory.content }}</p>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="alert alert-info">暂无记忆内容</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

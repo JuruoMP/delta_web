@@ -16,6 +16,9 @@ class LLMUtils:
         self.qa_system_prompt = self.load_prompt('qa_system_prompt.txt')
         self.qa_prompt_template_en = self.load_prompt('qa_prompt_template_en.txt')
         self.qa_prompt_template_zh = self.load_prompt('qa_prompt_template_zh.txt')
+        self.qa_soft_system_prompt = self.load_prompt('qa_soft_system_prompt.txt')
+        self.qa_soft_prompt_template_en = self.load_prompt('qa_soft_prompt_template_en.txt')
+        self.qa_soft_prompt_template_zh = self.load_prompt('qa_soft_prompt_template_zh.txt')
 
     def load_prompt(self, file_name):
         """加载prompt模板文件"""
@@ -44,4 +47,18 @@ class LLMUtils:
             qa_prompt_str = self.qa_prompt_template_en.replace('{{current_memory}}', current_memory_json).replace('{{retrieved_contexts}}', retrived_contexts_str).replace('{{user_query}}', user_query)
         
         return self.llm_service.chat(self.qa_system_prompt, qa_prompt_str, model_name=model_name)
+    
+    def get_qa_answer_soft(self, user_query, current_memory, retrieved_contexts, model_name=None):
+        chinese_chars = sum(1 for c in user_query if '\u4e00' <= c <= '\u9fff')
+        total_chars = max(len(user_query), 1)
+
+        current_memory_json = json.dumps(current_memory, indent=2, ensure_ascii=False)
+        retrived_contexts_str = '\n\n'.join(retrieved_contexts)
+        
+        if chinese_chars / total_chars > 0.3:  # 中文占比超过30%判定为中文问题
+            qa_prompt_str = self.qa_soft_prompt_template_zh.replace('{{current_memory}}', current_memory_json).replace('{{retrieved_contexts}}', retrived_contexts_str).replace('{{user_query}}', user_query)
+        else:
+            qa_prompt_str = self.qa_soft_prompt_template_en.replace('{{current_memory}}', current_memory_json).replace('{{retrieved_contexts}}', retrived_contexts_str).replace('{{user_query}}', user_query)
+        
+        return self.llm_service.chat(self.qa_soft_system_prompt, qa_prompt_str, model_name=model_name)
 
