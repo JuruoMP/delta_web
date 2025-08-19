@@ -23,6 +23,7 @@ from services.db_service import (
     clear_all_data, get_latest_memory, add_memory
 )
 from services.llm_service import LLMService
+from services.asr_service import ASRService
 from utils.llm_utils import LLMUtils
 
 # 配置加载
@@ -43,6 +44,7 @@ me = "user"
 db.init_app(app)
 llm_service = LLMService()
 llm_utils = LLMUtils(llm_service)
+asr_service = ASRService()
 memory_bank = MemoryBank(user=me)
 
 # 表单定义
@@ -306,19 +308,35 @@ def audio_upload():
         if audio_file:
             # 保存上传的音频文件
             filename = secure_filename(audio_file.filename)
-            upload_folder = os.path.join(app.root_path, 'uploads')
+            upload_folder = os.path.join(app.root_path, 'static', 'uploads')
             os.makedirs(upload_folder, exist_ok=True)
             file_path = os.path.join(upload_folder, filename)
             audio_file.save(file_path)
             
+            # 生成可访问的URL
+            file_url = url_for('static', filename=f'uploads/{filename}', _external=True)
+            
+            # 获取文件格式
+            file_ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else 'mp3'
+            supported_formats = {'mp3', 'wav', 'ogg'}
+            if file_ext not in supported_formats:
+                flash(f'不支持的音频格式: {file_ext}，仅支持mp3、wav、ogg', 'danger')
+                return redirect(url_for('audio_upload'))
+            
             # 调用ASR服务转换音频为文本
             try:
                 from services.asr_service import asr_service
-                transcription = asr_service.transcribe_audio(file_path)
+                transcription = asr_service.transcribe_audio(file_url, format=file_ext)
+                
+                # 提取转录文本
+                if isinstance(transcription, dict) and 'result' in transcription and 'utterances' in transcription['result']:
+                    text_result = '\n'.join([utt['text'] for utt in transcription['result']['utterances']])
+                else:
+                    text_result = str(transcription)
                 
                 # 将转录文本作为对话内容处理
                 flash('音频上传成功并已转换为文本', 'success')
-                return redirect(url_for('index', prefilled_text=transcription))
+                return redirect(url_for('index', prefilled_text=text_result))
             except Exception as e:
                 flash(f'音频处理失败: {str(e)}', 'danger')
                 return redirect(url_for('audio_upload'))
@@ -329,6 +347,7 @@ def audio_upload():
 def qa():
     form = QAForm()
     answer = None
+    content_list = []
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         if form.validate_on_submit():
             question = form.question.data
@@ -340,7 +359,6 @@ def qa():
                     memory_topics = json.loads(latest_memory.content)['topics']
                 if Config.QA_MODE == 'RAW':
                     conversations = get_all_conversations()
-                    content_list = []
                     for conv in conversations:
                         content = conv.content
                         content_list.append(content)
@@ -350,7 +368,7 @@ def qa():
                     answer = llm_utils.get_qa_answer_soft(question, memory_topics, content_list, model_name=model)
                 else:
                     raise ValueError("QA_MODE 配置错误")
-                return jsonify({'status': 'success', 'answer': answer})
+                return jsonify({'status': 'success', 'content_list': content_list, 'answer': answer})
             except Exception as e:
                 return jsonify({'status': 'error', 'message': f'获取回答失败: {str(e)}'})
         else:
