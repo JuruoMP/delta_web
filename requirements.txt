@@ -8,6 +8,12 @@ volcengine-python-sdk[ark]
 openai
 cython
 pydub
-# whisperx
-git+https://github.com/m-bain/whisperX.git
+pyannote.audio==3.1.1
+huggingface-hub
+torch
+torchaudio
+speechbrain
+numpy
+# whisperx is installed from a specific commit for stability
+git+https://github.com/m-bain/whisperX.git@345586a731953413633fb7432e13433010798735
 openai-whisper

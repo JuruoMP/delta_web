@@ -5,36 +5,36 @@ import uuid
 import urllib
 import torch
 from dotenv import load_dotenv
+import logging
 # 导入说话人特征提取器
-from speaker_diarization_utils import SpeakerFeatureExtractor
-# 尝试导入whisper.cpp的Python绑定
-# 注意：whisper.cpp的Python绑定可能有不同的导入方式
-# 这里使用whispercpp作为示例
+from services.speaker_diarization_utils import SpeakerFeatureExtractor
+
+# 配置日志记录
+logger = logging.getLogger(__name__)
 
 try:
-    import whispercpp as whisper
+    import whisper
 except ImportError:
-    try:
-        # 如果whispercpp不可用，尝试使用openai-whisper
-        import whisper
-    except ImportError:
-        raise ImportError("Please install whisper.cpp Python bindings or openai-whisper")
+    logger.error("Please install openai-whisper")
+    raise ImportError("Please install openai-whisper")
 
 # 尝试导入whisperx
-WHISPERX_AVAILABLE = False
 try:
     import whisperx
     WHISPERX_AVAILABLE = True
+    logger.info("WhisperX is available.")
 except ImportError:
-    print("WhisperX not installed. Speaker diarization will be disabled.")
+    WHISPERX_AVAILABLE = False
+    logger.warning("WhisperX not installed. Speaker diarization will be disabled.")
 
 # 尝试导入pyannote.audio
 PYANNOTE_AVAILABLE = False
 try:
     import pyannote.audio
     PYANNOTE_AVAILABLE = True
+    logger.info("pyannote.audio is available.")
 except ImportError:
-    print("pyannote.audio not installed. Speaker feature extraction will be disabled.")
+    logger.warning("pyannote.audio not installed. Speaker feature extraction will be disabled.")
 
 
 # 加载环境变量
@@ -196,18 +196,11 @@ class WhisperASRService:
                 
                 # 加载说话人区分模型
                 try:
-                    print(f"正在加载说话人区分模型: model_name={self.diarize_model_name}, device={self.device}, cache_dir={self.diarize_model_cache_dir}, use_auth_token={bool(self.hf_token)}")
-                    # 使用Hugging Face token加载说话人区分模型
-                    # self.diarize_model = whisperx.diarize.DiarizationPipeline(
-                    #     model_name=self.diarize_model_name,
-                    #     device=self.device,
-                    #     cache_dir=self.diarize_model_cache_dir,
-                    # )
-                    from pyannote.audio import Pipeline
-                    self.diarize_model = Pipeline.from_pretrained(
-                        self.diarize_model_name,
-                        use_auth_token=self.hf_api_key,
-                        cache_dir=self.model_path  # 保存说话人区分模型到本地
+                    print(f"正在加载说话人区分模型: model_name={self.diarize_model_name}, device={self.device}, use_auth_token={bool(self.hf_token)}")
+                    self.diarize_model = whisperx.diarize.DiarizationPipeline(
+                        model_name=self.diarize_model_name,
+                        device=self.device,
+                        use_auth_token=self.hf_token
                     )
                     print(f"说话人区分模型加载成功: {self.diarize_model}")
                 except Exception as e:
@@ -316,23 +309,6 @@ class WhisperASRService:
                 "text": result.get('text', ''),
                 "segments": segments
             }
-        elif self.library_type == 'whispercpp':
-            result = self.current_model.transcribe(file_url, language=self.current_language)
-            
-            # 标准化结果格式
-            segments = []
-            if 'segments' in result:
-                for s in result['segments']:
-                    segments.append({
-                        "text": s['text'],
-                        "start_time": s['start'],
-                        "end_time": s['end']
-                    })
-            
-            standardized_result = {
-                "text": result.get('text', ''),
-                "segments": segments
-            }
         else:
             raise Exception("Unsupported whisper library")
         
@@ -371,32 +347,38 @@ class WhisperASRService:
             print(f"音频文件完整路径: {full_file_path}")
             audio = whisperx.load_audio(full_file_path)
             print(f"音频加载成功")
-            result = self.whisperx_model.transcribe(audio, language=self.current_language)
-            print(f"转录完成，结果段落数: {len(result.get('segments', []))}")
+            transcribe_result = self.whisperx_model.transcribe(audio, language=self.current_language)
+            print(f"转录完成，结果段落数: {len(transcribe_result.get('segments', []))}")
+            
+            # 手动从段落构建完整文本
+            full_text = " ".join([s['text'].strip() for s in transcribe_result.get('segments', [])])
             
             # 对齐时间戳
             import torch
             try:
                 if self.align_model:
                     print(f"开始对齐时间戳")
-                    result = whisperx.align(result["segments"], self.align_model, self.align_metadata, audio, device="cuda" if torch.cuda.is_available() else "cpu")
+                    aligned_result = whisperx.align(transcribe_result["segments"], self.align_model, self.align_metadata, audio, device="cuda" if torch.cuda.is_available() else "cpu")
                     print(f"时间戳对齐完成")
                 else:
+                    aligned_result = transcribe_result
                     print("对齐模型未加载，跳过时间戳对齐步骤")
             except AttributeError as e:
                 # 如果对齐模型没有metadata属性，则跳过对齐步骤
                 print(f"对齐模型缺少metadata属性，跳过时间戳对齐步骤: {e}")
+                aligned_result = transcribe_result
                 pass
             except Exception as e:
                 # 如果对齐过程中出现其他错误，也跳过对齐步骤
                 print(f"时间戳对齐过程中出现错误，跳过对齐步骤: {e}")
+                aligned_result = transcribe_result
                 pass
             
             # 进行说话人区分
             print(f"开始说话人区分")
             diarize_segments = self.diarize_model(full_file_path)
             print(f"说话人区分完成，段落数: {len(diarize_segments)}")
-            result = whisperx.assign_word_speakers(diarize_segments, result)
+            result = whisperx.assign_word_speakers(diarize_segments, aligned_result)
             print(f"说话人分配完成")
 
             # 提取说话人特征并进行跨录音匹配
@@ -451,7 +433,7 @@ class WhisperASRService:
             }
             
             standardized_result = {
-                "text": result["text"],
+                "text": full_text,
                 "segments": segments,
                 "speaker_texts": speaker_texts,
                 "speaker_mapping": speaker_mapping_info
@@ -512,6 +494,8 @@ class WhisperASRService:
 
 
 if __name__ == '__main__':
+    print("!!!!!!!!!! EXECUTING MAIN BLOCK !!!!!!!!!!")
+    import pprint
     # 创建服务实例
     whisper_asr_service = WhisperASRService()
     print(f"服务实例创建完成, enable_diarization={whisper_asr_service.enable_diarization}, whisperx_model={bool(whisper_asr_service.whisperx_model)}, diarize_model={bool(whisper_asr_service.diarize_model)}")
@@ -527,15 +511,17 @@ if __name__ == '__main__':
     try:
         # 使用英文模型
         result_en = whisper_asr_service.transcribe_audio("tmp/demo_audio.wav")
-        # print("English transcription:", result_en['result'])
+        print("English transcription:")
+        pprint.pprint(result_en['result'])
         
         # 打印说话人区分结果
-        if 'speaker_texts' in result_en['result']:
+        if 'speaker_texts' in result_en['result'] and result_en['result']['speaker_texts']:
             for speaker, text in result_en['result']['speaker_texts'].items():
                 print(f"Speaker {speaker}: {text}")
         else:
             print("未找到说话人区分结果")
-            print("结果键:", result_en['result'].keys())
+            if 'result' in result_en and isinstance(result_en['result'], dict):
+                print("结果键:", result_en['result'].keys())
         
         # 切换到中文模型
         # result_zh = whisper_asr_service.transcribe_audio("tmp/demo_audio_zh.mp3", language="zh")

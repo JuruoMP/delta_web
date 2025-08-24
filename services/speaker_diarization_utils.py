@@ -1,13 +1,13 @@
 import torch
 import numpy as np
-from pyannote.audio import Pipeline
+from pyannote.audio import Pipeline, Inference
+from pyannote.audio.core.io import Audio
+from pyannote.core import Segment
 from sklearn.metrics.pairwise import cosine_similarity
 import json
 import os
 import logging
 
-# 配置日志
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class SpeakerFeatureExtractor:
@@ -32,41 +32,54 @@ class SpeakerFeatureExtractor:
         # 延迟加载模型，仅在需要时加载
         self.diarization_pipeline = None
         self.embedding_pipeline = None
+        self.audio_loader = Audio(sample_rate=16000, mono=True)
 
     def _load_models(self):
         """
         加载pyannote模型
         """
-        if self.diarization_pipeline is None and self.embedding_pipeline is None:
+        if self.diarization_pipeline is None:
             try:
-                logger.info("开始加载pyannote模型...")
+                logger.info("开始加载pyannote diarization模型...")
                 self.diarization_pipeline = Pipeline.from_pretrained(
                     "pyannote/speaker-diarization-3.1",
                     use_auth_token=self.hf_api_key
                 )
-                self.embedding_pipeline = Pipeline.from_pretrained(
+                logger.info("pyannote diarization模型加载成功")
+            except Exception as e:
+                logger.error(f"加载pyannote diarization模型失败", exc_info=True)
+                raise
+        
+        if self.embedding_pipeline is None:
+            try:
+                logger.info("开始加载pyannote embedding模型...")
+                self.embedding_pipeline = Inference(
                     "pyannote/embedding",
                     use_auth_token=self.hf_api_key
                 )
-                logger.info("pyannote模型加载成功")
+                logger.info("pyannote embedding模型加载成功")
             except Exception as e:
-                logger.error(f"加载pyannote模型失败: {str(e)}")
+                logger.error(f"加载pyannote embedding模型失败", exc_info=True)
                 raise
 
     def _load_database(self):
         """
         从文件加载说话人特征数据库
         """
+        logger.info(f"Attempting to load speaker database from: {self.database_path}")
         if os.path.exists(self.database_path):
+            logger.info(f"Database file found.")
             try:
                 with open(self.database_path, 'r') as f:
-                    self.speaker_database = json.load(f)
+                    content = f.read()
+                    logger.info(f"Database file content (first 100 chars): {content[:100]}")
+                    self.speaker_database = json.loads(content)
                 logger.info(f"已加载说话人数据库，包含 {len(self.speaker_database)} 个说话人")
             except Exception as e:
-                logger.error(f"加载说话人数据库失败: {str(e)}")
+                logger.error(f"加载说话人数据库失败: {str(e)}", exc_info=True)
                 self.speaker_database = {}
         else:
-            logger.info("说话人数据库不存在，将创建新数据库")
+            logger.info(f"说话人数据库不存在: {self.database_path}")
             self.speaker_database = {}
 
     def _save_database(self):
@@ -90,6 +103,10 @@ class SpeakerFeatureExtractor:
         # 确保模型已加载
         self._load_models()
 
+        if not self.diarization_pipeline or not self.embedding_pipeline:
+            logger.error("模型未能正确加载，无法提取特征。")
+            return {}
+
         # 如果没有提供分离结果，执行分离
         if diarization_result is None:
             try:
@@ -104,27 +121,60 @@ class SpeakerFeatureExtractor:
         speaker_features = {}
         try:
             logger.info("开始提取说话人特征...")
-            for segment, _, speaker in diarization_result.itertracks(yield_label=True):
-                # 提取说话人语音片段的嵌入向量
-                embedding = self.embedding_pipeline(
-                    audio_path,
-                    start_time=segment.start,
-                    end_time=segment.end
-                )
-                # 取平均值作为该说话人的特征
-                embedding_np = embedding.detach().cpu().numpy().mean(axis=0)
+            
+            def process_embedding(embedding, speaker):
+                embedding_np = embedding
+                if hasattr(embedding_np, 'data'):  # Handle pyannote's SlidingWindowFeature
+                    embedding_np = embedding_np.data
+                
+                # If we get multiple embeddings for a chunk, average them.
+                if isinstance(embedding_np, np.ndarray) and embedding_np.ndim == 2 and embedding_np.shape[0] > 1:
+                    embedding_np = np.mean(embedding_np, axis=0)
 
-                if speaker not in speaker_features:
-                    speaker_features[speaker] = []
-                speaker_features[speaker].append(embedding_np)
+                # The embedding pipeline can also return (1, D) array. We squeeze it to (D,)
+                if isinstance(embedding_np, np.ndarray) and embedding_np.ndim == 2 and embedding_np.shape[0] == 1:
+                    embedding_np = embedding_np.squeeze(axis=0)
+
+                if isinstance(embedding_np, np.ndarray) and embedding_np.ndim == 1:
+                    if speaker not in speaker_features:
+                        speaker_features[speaker] = []
+                    speaker_features[speaker].append(embedding_np)
+                else:
+                    logger.warning(f"Skipping embedding for speaker {speaker} due to unexpected shape or type: {type(embedding_np)}, shape: {getattr(embedding_np, 'shape', 'N/A')}")
+
+            # whisperx diarization pipeline can return a dataframe, so we iterate over rows
+            if hasattr(diarization_result, 'iterrows'):
+                for _, row in diarization_result.iterrows():
+                    segment = Segment(start=row['start'], end=row['end'])
+                    speaker = row['speaker']
+                    chunk_waveform, _ = self.audio_loader.crop(audio_path, segment)
+                    audio_chunk_for_embedding = {"waveform": chunk_waveform, "sample_rate": self.audio_loader.sample_rate}
+                    embedding = self.embedding_pipeline(audio_chunk_for_embedding)
+                    process_embedding(embedding, speaker)
+            else: # it's a pyannote annotation object
+                for segment, _, speaker in diarization_result.itertracks(yield_label=True):
+                    chunk_waveform, _ = self.audio_loader.crop(audio_path, segment)
+                    audio_chunk_for_embedding = {"waveform": chunk_waveform, "sample_rate": self.audio_loader.sample_rate}
+                    embedding = self.embedding_pipeline(audio_chunk_for_embedding)
+                    process_embedding(embedding, speaker)
 
             # 计算每个说话人的平均特征
-            for speaker in speaker_features:
-                speaker_features[speaker] = np.mean(speaker_features[speaker], axis=0).tolist()
+            for speaker in list(speaker_features.keys()):
+                if speaker_features[speaker]:
+                    try:
+                        speaker_features[speaker] = np.mean(speaker_features[speaker], axis=0).tolist()
+                    except Exception as e:
+                        logger.error(f"Could not compute mean for speaker {speaker}, num_features: {len(speaker_features[speaker])}. Error: {e}")
+                        # Log shapes for debugging
+                        for i, feat in enumerate(speaker_features[speaker]):
+                            logger.error(f"  Feature {i} shape: {feat.shape}")
+                        del speaker_features[speaker]
+                else:
+                    del speaker_features[speaker]
 
             logger.info(f"成功提取 {len(speaker_features)} 个说话人的特征")
         except Exception as e:
-            logger.error(f"提取说话人特征失败: {str(e)}")
+            logger.error(f"提取说话人特征失败: {str(e)}", exc_info=True)
             return {}
 
         return speaker_features
@@ -152,9 +202,10 @@ class SpeakerFeatureExtractor:
             else:
                 # 计算与现有说话人的相似度
                 similarities = []
+                new_features_np = np.array(new_features).reshape(1, -1)
                 for existing_speaker in existing_speakers:
-                    existing_features = np.array(self.speaker_database[existing_speaker])
-                    similarity = cosine_similarity([new_features], [existing_features])[0][0]
+                    existing_features_np = np.array(self.speaker_database[existing_speaker]).reshape(1, -1)
+                    similarity = cosine_similarity(new_features_np, existing_features_np)[0][0]
                     similarities.append((existing_speaker, similarity))
 
                 # 找到最相似的说话人
