@@ -130,6 +130,7 @@ class SpeakerFeatureExtractor:
         return speaker_features
 
     def match_speakers_across_recordings(self, new_speaker_features, threshold=0.85):
+        print('2222222222222222')
         """
         跨录音匹配说话人
         :param new_speaker_features: 新录音的说话人特征 {speaker_id: feature_vector}

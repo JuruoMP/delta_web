@@ -8,13 +8,6 @@ volcengine-python-sdk[ark]
 openai
 cython
 pydub
-whisperx
-#git+https://github.com/m-bain/whisperX.git
+# whisperx
+git+https://github.com/m-bain/whisperX.git
 openai-whisper
-torch==2.5.1
-ffmpeg-python
-tqdm
-transformers
-tokenizers
-soundfile
-librosa
