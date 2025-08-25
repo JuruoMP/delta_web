@@ -4,6 +4,8 @@ import time
 import threading
 import signal
 import sys
+import logging
+from logging.handlers import RotatingFileHandler
 from datetime import datetime
 from functools import wraps
 from flask import Flask, render_template, redirect, url_for, flash, request, jsonify, session, g, copy_current_request_context
@@ -23,7 +25,8 @@ from services.db_service import (
     clear_all_data, get_latest_memory, add_memory
 )
 from services.llm_service import LLMService
-from services.asr_service import ASRService
+# from services.asr_service import ASRService
+from services.whisper_asr_service import WhisperASRService as ASRService
 from utils.llm_utils import LLMUtils
 
 # 配置加载
@@ -40,11 +43,18 @@ class Config:
 app = Flask(__name__)
 app.config.from_object(Config)
 
+# 配置日志
+if not app.debug:
+    handler = RotatingFileHandler('gunicorn.log', maxBytes=10000, backupCount=1)
+    handler.setLevel(logging.INFO)
+    app.logger.addHandler(handler)
+
 me = "user"
 db.init_app(app)
 llm_service = LLMService()
 llm_utils = LLMUtils(llm_service)
 asr_service = ASRService()
+asr_service.switch_model('en')  # 强制使用英文
 memory_bank = MemoryBank(user=me)
 
 # 表单定义
@@ -116,7 +126,7 @@ def logout():
 @app.route('/', methods=['GET', 'POST'])
 @login_required
 def index():
-    prefilled_text = request.args.get('prefilled_text', '')
+    prefilled_text = session.pop('prefilled_text', '')
     form = UploadForm(conversation_text=prefilled_text)
     if form.validate_on_submit():
         content = form.conversation_text.data
@@ -308,6 +318,7 @@ def audio_upload():
         if audio_file:
             # 保存上传的音频文件
             filename = secure_filename(audio_file.filename)
+            app.logger.info(f"Received audio file for upload: {filename}")
             upload_folder = os.path.join(app.root_path, 'static', 'uploads')
             os.makedirs(upload_folder, exist_ok=True)
             file_path = os.path.join(upload_folder, filename)
@@ -320,24 +331,36 @@ def audio_upload():
             file_ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else 'mp3'
             supported_formats = {'mp3', 'wav', 'ogg'}
             if file_ext not in supported_formats:
+                app.logger.warning(f"Unsupported audio format: {file_ext}")
                 flash(f'不支持的音频格式: {file_ext}，仅支持mp3、wav、ogg', 'danger')
                 return redirect(url_for('audio_upload'))
             
             # 调用ASR服务转换音频为文本
             try:
-                from services.asr_service import asr_service
-                transcription = asr_service.transcribe_audio(file_url, format=file_ext)
+                app.logger.info(f"Starting transcription for {filename}")
+                transcription = asr_service.transcribe_audio(file_path, format=file_ext)
+                print(f'{transcription=}')
+                app.logger.info(f"Transcription successful for {filename}")
                 
-                # 提取转录文本
-                if isinstance(transcription, dict) and 'result' in transcription and 'utterances' in transcription['result']:
-                    text_result = '\n'.join([utt['text'] for utt in transcription['result']['utterances']])
+                # 提取转录文本并格式化为对话形式
+                formatted_text = ""
+                if isinstance(transcription, dict) and 'result' in transcription and 'segments' in transcription['result']:
+                    formatted_text += datetime.now().strftime("%Y-%m-%d") + "\n"
+                    for segment in transcription['result']['segments']:
+                        speaker = segment.get('speaker', 'Unknown')
+                        text = segment.get('text', '').strip()
+                        if text:
+                            formatted_text += f"{speaker}: {text}\n"
+                    text_result = formatted_text.strip()
                 else:
                     text_result = str(transcription)
                 
                 # 将转录文本作为对话内容处理
                 flash('音频上传成功并已转换为文本', 'success')
-                return redirect(url_for('index', prefilled_text=text_result))
+                session['prefilled_text'] = text_result
+                return redirect(url_for('index'))
             except Exception as e:
+                app.logger.error(f'Audio processing failed: {str(e)}', exc_info=True)
                 flash(f'音频处理失败: {str(e)}', 'danger')
                 return redirect(url_for('audio_upload'))
     return render_template('audio_upload.html', form=form)

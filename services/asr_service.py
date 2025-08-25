@@ -95,36 +95,3 @@ class ASRService:
             print(f'Query task failed and the response headers are: {response.headers}')
             raise Exception(f"Query task failed with headers: {response.headers}")
         return response
-
-    def transcribe_audio(self, file_url, format="mp3"):
-        """
-        转录音频文件为文本
-        :param file_url: 音频文件的在线URL
-        :param format: 音频文件格式，支持mp3、wav、ogg等
-        :return: 转录结果
-        """
-        task_id, x_tt_logid = self.submit_task(file_url, format)
-        while True:
-            query_response = self.query_task(task_id, x_tt_logid)
-            code = query_response.headers.get('X-Api-Status-Code', "")
-            if code == '20000000':  # task finished
-                result = query_response.json()
-                print("SUCCESS!")
-                return result
-            elif code != '20000001' and code != '20000002':  # task failed
-                print("FAILED!")
-                raise Exception(f"Transcription failed with status code: {code}")
-            time.sleep(1)
-
-
-if __name__ == '__main__':
-    # 示例用法
-    file_url = ""  # 需要使用在线URL，推荐使用TOS
-    if file_url:
-        try:
-            result = asr_service.transcribe_audio(file_url)
-            print(json.dumps(result, indent=2, ensure_ascii=False))
-        except Exception as e:
-            print(f"Error: {str(e)}")
-    else:
-        print("请设置有效的音频文件URL")
