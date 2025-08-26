@@ -369,7 +369,7 @@ def audio_upload():
                 
                 # 将转录文本作为对话内容处理
                 flash('音频上传成功并已转换为文本', 'success')
-                session['prefilled_text'] = f'{datetime.today().date()}' + text_result
+                session['prefilled_text'] = f'{datetime.today().date()}\n' + text_result
                 return redirect(url_for('index'))
             except Exception as e:
                 app.logger.error(f'Audio processing failed: {str(e)}', exc_info=True)
