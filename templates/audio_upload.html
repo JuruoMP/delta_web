@@ -19,8 +19,28 @@
             {% endif %}
         </div>
         <div class="mb-3">
-            {{ form.submit(class="btn btn-primary") }}
+            {{ form.submit(class="btn btn-primary", id="submit-btn") }}
         </div>
+            <div id="loading-indicator" class="hidden alert alert-info mt-3" style="display: none;">
+            <strong>处理中</strong> 音频正在上传和处理，请稍候...
+        </div>
+
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                const form = document.querySelector('form');
+                const loadingIndicator = document.getElementById('loading-indicator');
+
+                form.addEventListener('submit', function() {
+                    // 显示加载提示
+                    loadingIndicator.style.display = 'block';
+
+                    // 禁用提交按钮防止重复提交
+                    const submitBtn = document.getElementById('submit-btn');
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = '处理中...';
+                });
+            });
+        </script>
     </form>
 </div>
 {% endblock %}
