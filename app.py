@@ -43,6 +43,10 @@ class Config:
 app = Flask(__name__)
 app.config.from_object(Config)
 
+# 导入并注册API蓝图
+from api import api_bp
+app.register_blueprint(api_bp, url_prefix='/api')
+
 # 配置日志
 if not app.debug:
     handler = RotatingFileHandler('gunicorn.log', maxBytes=10000, backupCount=1)
