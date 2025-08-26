@@ -191,23 +191,43 @@ def get_latest_memory():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 # 事件相关API
+@api_bp.route('/get_comming_up', methods=['GET'])
+def get_comming_up():
+    """获取即将到来的安排"""
+    try:
+        return jsonify({
+            'status': 'success',
+            'data': 'Meeting up with Jianjian'
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@api_bp.route('/get_attention', methods=['GET'])
+def get_attention():
+    """获取需要注意的事项"""
+    try:
+        return jsonify({
+            'status': 'success',
+            'data': ['Delta Brain', '膝盖治疗', '头脑风暴']
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 # @api_bp.route('/events', methods=['GET'])
 @api_bp.route('/get_current', methods=['GET'])
 def get_events():
     """获取所有事件"""
     try:
-        memory = get_latest_memory()
-        event_list = []
-        if memory:
-            memory_data = json.loads(memory.content)
-            for topic in memory_data.get('topics', []):
-                event = Event(
-                    date=datetime.now(),
-                    title=topic.get('title', ''),
-                    details=topic.get('summary', '')
-                )
-                event_list.append(event)
-        return jsonify({'status': 'success', 'data': event_list})
+        events = Event.query.order_by(Event.date.desc()).all()
+        result = []
+        for event in events:
+            result.append({
+                'id': event.id,
+                'date': event.date.isoformat(),
+                'title': event.title,
+                'details': event.details
+            })
+        return jsonify({'status': 'success', 'data': result})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
