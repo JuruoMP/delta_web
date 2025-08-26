@@ -1,14 +1,13 @@
 import os
 import json
 from datetime import datetime
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from werkzeug.utils import secure_filename
 
 # 导入必要的服务和模型
 from extensions import db
 from models import Conversation, Memory, Event
 from services.llm_service import LLMService
-from services.whisper_asr_service import WhisperASRService as ASRService
 from utils.llm_utils import LLMUtils
 from utils.memory_utils import MemoryBank
 
@@ -18,9 +17,19 @@ api_bp = Blueprint('api', __name__)
 # 初始化服务
 llm_service = LLMService()
 llm_utils = LLMUtils(llm_service)
-asr_service = ASRService()
-asr_service.switch_model('en')  # 强制使用英文
 memory_bank = MemoryBank(user="api_user")
+
+# 根据配置选择ASR服务
+GLOBAL_LANG = current_app.config.get('GLOBAL_LANG', 'en')
+if GLOBAL_LANG == 'en':
+    from services.whisper_asr_service import WhisperASRService
+    asr_service = WhisperASRService()
+    asr_service.switch_model('en')  # 强制使用英文
+elif GLOBAL_LANG == 'zh':
+    from services.funasr_service import FunASRService
+    asr_service = FunASRService()
+else:
+    raise ValueError("Language not supported")
 
 # 配置
 ALLOWED_EXTENSIONS = {'wav', 'mp3', 'ogg'}
@@ -218,16 +227,18 @@ def get_attention():
 def get_events():
     """获取所有事件"""
     try:
-        events = Event.query.order_by(Event.date.desc()).all()
-        result = []
-        for event in events:
-            result.append({
-                'id': event.id,
-                'date': event.date.isoformat(),
-                'title': event.title,
-                'details': event.details
-            })
-        return jsonify({'status': 'success', 'data': result})
+        memory = get_latest_memory()
+        event_list = []
+        if memory:
+            memory_data = json.loads(memory.content)
+            for topic in memory_data.get('topics', []):
+                event = Event(
+                    date=datetime.now(),
+                    title=topic.get('title', ''),
+                    details=topic.get('summary', '')
+                )
+                event_list.append(event)
+        return jsonify({'status': 'success', 'data': event_list})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -264,39 +275,43 @@ def transcribe_audio():
 
         if audio_file and allowed_file(audio_file.filename):
             filename = secure_filename(audio_file.filename)
-            upload_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads')
+            upload_folder = os.path.join(current_app.root_path, 'static', 'uploads')
             os.makedirs(upload_folder, exist_ok=True)
             file_path = os.path.join(upload_folder, filename)
             audio_file.save(file_path)
+            current_app.logger.info(f"Received audio file for upload: {filename}")
 
             # 获取文件格式
             file_ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else 'mp3'
+            supported_formats = {'mp3', 'wav', 'ogg'}
+            if file_ext not in supported_formats:
+                current_app.logger.warning(f"Unsupported audio format: {file_ext}")
+                return jsonify({'status': 'error', 'message': f'不支持的音频格式: {file_ext}，仅支持mp3、wav、ogg'}), 400
 
             # 获取是否启用说话人区分的参数
             enable_diarization = request.form.get('enable_diarization', 'true').lower() == 'true'
             
             # 调用ASR服务转换音频为文本
-            transcription = asr_service.transcribe_audio(file_path, format=file_ext, enable_diarization=enable_diarization)
+            current_app.logger.info(f"Starting transcription for {filename}")
+            try:
+                transcription = asr_service.transcribe_audio(file_path, format=file_ext, enable_diarization=enable_diarization)
+                current_app.logger.info(f"Transcription successful for {filename}")
+            except Exception as e:
+                current_app.logger.error(f'Audio processing failed: {str(e)}', exc_info=True)
+                return jsonify({'status': 'error', 'message': f'音频处理失败: {str(e)}'}), 500
 
-            # 提取转录文本并格式化为对话形式
-            formatted_text = ""
-            if isinstance(transcription, dict) and 'result' in transcription and 'segments' in transcription['result']:
-                formatted_text += datetime.now().strftime("%Y-%m-%d") + "\n"
-                for segment in transcription['result']['segments']:
-                    speaker = segment.get('speaker', 'Unknown')
-                    text = segment.get('text', '').strip()
-                    if text:
-                        formatted_text += f"{speaker}: {text}\n"
-                text_result = formatted_text.strip()
+            # 格式化转录结果
+            if isinstance(transcription, dict) and 'dialogue_lines' in transcription:
+                text_result = '\n'.join(transcription['dialogue_lines'])
             else:
                 text_result = str(transcription)
 
-            # 删除临时文件
-            os.remove(file_path)
-
+            # 返回转录结果
             return jsonify({
                 'status': 'success',
+                'message': '音频转录成功',
                 'data': {
+                    'filename': filename,
                     'transcription': text_result
                 }
             })

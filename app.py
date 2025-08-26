@@ -25,8 +25,7 @@ from services.db_service import (
     clear_all_data, get_latest_memory, add_memory
 )
 from services.llm_service import LLMService
-# from services.asr_service import ASRService
-from services.whisper_asr_service import WhisperASRService as ASRService
+
 from utils.llm_utils import LLMUtils
 
 # 配置加载
@@ -38,6 +37,7 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     ALLOWED_EXTENSIONS = {'wav', 'mp3', 'ogg'}
     QA_MODE = 'MEM0'
+    GLOBAL_LANG = os.getenv('GLOBAL_LANG', 'en')
 
 # 应用初始化
 app = Flask(__name__)
@@ -57,8 +57,15 @@ me = "user"
 db.init_app(app)
 llm_service = LLMService()
 llm_utils = LLMUtils(llm_service)
-asr_service = ASRService()
-asr_service.switch_model('en')  # 强制使用英文
+if Config.GLOBAL_LANG == 'en':
+    from services.whisper_asr_service import WhisperASRService
+    asr_service = WhisperASRService()
+    asr_service.switch_model('en')  # 强制使用英文
+elif Config.GLOBAL_LANG == 'zh':
+    from services.funasr_service import FunASRService
+    asr_service = FunASRService()
+else:
+    raise ValueError("Language not supported")
 memory_bank = MemoryBank(user=me)
 
 # 表单定义
@@ -343,21 +350,22 @@ def audio_upload():
             try:
                 app.logger.info(f"Starting transcription for {filename}")
                 transcription = asr_service.transcribe_audio(file_path, format=file_ext)
-                print(f'{transcription=}')
+                # print(f'{transcription=}')
                 app.logger.info(f"Transcription successful for {filename}")
                 
                 # 提取转录文本并格式化为对话形式
-                formatted_text = ""
-                if isinstance(transcription, dict) and 'result' in transcription and 'segments' in transcription['result']:
-                    formatted_text += datetime.now().strftime("%Y-%m-%d") + "\n"
-                    for segment in transcription['result']['segments']:
-                        speaker = segment.get('speaker', 'Unknown')
-                        text = segment.get('text', '').strip()
-                        if text:
-                            formatted_text += f"{speaker}: {text}\n"
-                    text_result = formatted_text.strip()
-                else:
-                    text_result = str(transcription)
+                # formatted_text = ""
+                # if isinstance(transcription, dict) and 'result' in transcription and 'segments' in transcription['result']:
+                #     formatted_text += datetime.now().strftime("%Y-%m-%d") + "\n"
+                #     for segment in transcription['result']['segments']:
+                #         speaker = segment.get('speaker', 'Unknown')
+                #         text = segment.get('text', '').strip()
+                #         if text:
+                #             formatted_text += f"{speaker}: {text}\n"
+                #     text_result = formatted_text.strip()
+                # else:
+                #     text_result = str(transcription)
+                text_result = '\n'.join(transcription['dialogue_lines'])
                 
                 # 将转录文本作为对话内容处理
                 flash('音频上传成功并已转换为文本', 'success')

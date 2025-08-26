@@ -17,3 +17,5 @@ numpy
 # whisperx is installed from a specific commit for stability
 git+https://github.com/m-bain/whisperX.git
 openai-whisper
+jieba
+funasr

@@ -480,11 +480,6 @@ class WhisperASRService:
             traceback.print_exc()
             # 出错时降级到不使用说话人区分的模式
             return self._query_task_without_diarization(task_id, x_tt_logid, file_url, format, headers)
-        
-    def to_dialog_format(self, segments):
-        raise NotImplementedError
-
-
 
 
 if __name__ == '__main__':
