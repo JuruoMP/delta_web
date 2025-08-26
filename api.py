@@ -19,17 +19,29 @@ llm_service = LLMService()
 llm_utils = LLMUtils(llm_service)
 memory_bank = MemoryBank(user="api_user")
 
-# 根据配置选择ASR服务
-GLOBAL_LANG = current_app.config.get('GLOBAL_LANG', 'en')
-if GLOBAL_LANG == 'en':
-    from services.whisper_asr_service import WhisperASRService
-    asr_service = WhisperASRService()
-    asr_service.switch_model('en')  # 强制使用英文
-elif GLOBAL_LANG == 'zh':
-    from services.funasr_service import FunASRService
-    asr_service = FunASRService()
-else:
-    raise ValueError("Language not supported")
+# 声明全局变量
+asr_service = None
+GLOBAL_LANG = None
+
+# 标记是否已初始化
+_asr_service_initialized = False
+
+# 在应用上下文可用后初始化ASR服务
+@api_bp.before_app_request
+def init_asr_service():
+    global asr_service, GLOBAL_LANG, _asr_service_initialized
+    if not _asr_service_initialized:
+        GLOBAL_LANG = current_app.config.get('GLOBAL_LANG', 'en')
+        if GLOBAL_LANG == 'en':
+            from services.whisper_asr_service import WhisperASRService
+            asr_service = WhisperASRService()
+            asr_service.switch_model('en')  # 强制使用英文
+        elif GLOBAL_LANG == 'zh':
+            from services.funasr_service import FunASRService
+            asr_service = FunASRService()
+        else:
+            raise ValueError("Language not supported")
+        _asr_service_initialized = True
 
 # 配置
 ALLOWED_EXTENSIONS = {'wav', 'mp3', 'ogg'}
@@ -291,6 +303,10 @@ def transcribe_audio():
             # 获取是否启用说话人区分的参数
             enable_diarization = request.form.get('enable_diarization', 'true').lower() == 'true'
             
+            # 确保ASR服务已初始化
+            if asr_service is None:
+                return jsonify({'status': 'error', 'message': 'ASR服务未初始化'}), 500
+
             # 调用ASR服务转换音频为文本
             current_app.logger.info(f"Starting transcription for {filename}")
             try:
