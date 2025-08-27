@@ -91,7 +91,7 @@ def get_conversation(conv_id):
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-@api_bp.route('/conversations', methods=['POST'])
+@api_bp.route('/create_conversation', methods=['POST'])
 def create_conversation():
     """创建新对话"""
     try:
