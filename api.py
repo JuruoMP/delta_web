@@ -10,6 +10,10 @@ from models import Conversation, Memory, Event
 from services.llm_service import LLMService
 from utils.llm_utils import LLMUtils
 from utils.memory_utils import MemoryBank
+from services.db_service import (
+    add_conversation, get_all_conversations, clear_conversations,
+    clear_all_data, get_latest_memory, add_memory
+)
 
 # 创建API蓝图
 api_bp = Blueprint('api', __name__)
@@ -193,23 +197,23 @@ def get_memories():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-@api_bp.route('/memories/latest', methods=['GET'])
-def get_latest_memory():
-    """获取最新记忆"""
-    try:
-        latest_memory = Memory.query.order_by(Memory.updated_at.desc()).first()
-        if not latest_memory:
-            return jsonify({'status': 'success', 'data': None})
-        return jsonify({
-            'status': 'success',
-            'data': {
-                'id': latest_memory.id,
-                'content': latest_memory.content,
-                'updated_at': latest_memory.updated_at.isoformat()
-            }
-        })
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+# @api_bp.route('/memories/latest', methods=['GET'])
+# def get_latest_memory():
+#     """获取最新记忆"""
+#     try:
+#         latest_memory = Memory.query.order_by(Memory.updated_at.desc()).first()
+#         if not latest_memory:
+#             return jsonify({'status': 'success', 'data': None})
+#         return jsonify({
+#             'status': 'success',
+#             'data': {
+#                 'id': latest_memory.id,
+#                 'content': latest_memory.content,
+#                 'updated_at': latest_memory.updated_at.isoformat()
+#             }
+#         })
+#     except Exception as e:
+#         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 # 事件相关API
 @api_bp.route('/get_comming_up', methods=['GET'])
