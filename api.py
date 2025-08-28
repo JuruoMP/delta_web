@@ -242,7 +242,7 @@ def get_attention():
 @api_bp.route('/get_current', methods=['GET'])
 def get_events():
     """获取所有事件"""
-    if True:#try:
+    try:
         memory = get_latest_memory()
         event_list = []
         if memory:
@@ -255,7 +255,7 @@ def get_events():
                 }
                 event_list.append(event)
         return jsonify({'status': 'success', 'data': event_list})
-    else:#except Exception as e:
+    except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @api_bp.route('/events/latest', methods=['GET'])
