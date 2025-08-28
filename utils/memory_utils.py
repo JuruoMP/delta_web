@@ -3,11 +3,21 @@ from mem0 import Memory
 
 
 class MemoryBank:
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = super(MemoryBank, cls).__new__(cls)
+        return cls._instance
+
     def __init__(self, user):
+        if hasattr(self, 'initialized') and self.initialized:
+            return
+        self.initialized = True
         self.config = {
             "llm": {"provider": "doubao", "config": {"enable_vision": True, "vision_details": "auto"}}, 
             "embedder": {"provider": "doubao"}, 
-            "vector_store": {"provider": "qdrant", "config": {"host": "localhost", "embedding_model_dims": 2560, "on_disk": False, "path": "./qdrant_data"}},
+            "vector_store": {"provider": "qdrant", "config": {"host": "localhost", "embedding_model_dims": 2560, "on_disk": True, "path": "./qdrant_data"}},
         }
         self.memory = Memory.from_config(self.config)
         self.user = user
