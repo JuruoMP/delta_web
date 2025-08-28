@@ -216,8 +216,8 @@ def get_memories():
 #         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 # 事件相关API
-@api_bp.route('/get_comming_up', methods=['GET'])
-def get_comming_up():
+@api_bp.route('/get_coming_up', methods=['GET'])
+def get_coming_up():
     """获取即将到来的安排"""
     try:
         return jsonify({
@@ -242,20 +242,20 @@ def get_attention():
 @api_bp.route('/get_current', methods=['GET'])
 def get_events():
     """获取所有事件"""
-    try:
+    if True:#try:
         memory = get_latest_memory()
         event_list = []
         if memory:
             memory_data = json.loads(memory.content)
             for topic in memory_data.get('topics', []):
-                event = Event(
-                    date=datetime.now(),
-                    title=topic.get('title', ''),
-                    details=topic.get('summary', '')
-                )
+                event = {
+                    "date": datetime.now(),
+                    "title": topic.get('title', ''),
+                    "details": topic.get('summary', '')
+                }
                 event_list.append(event)
         return jsonify({'status': 'success', 'data': event_list})
-    except Exception as e:
+    else:#except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @api_bp.route('/events/latest', methods=['GET'])

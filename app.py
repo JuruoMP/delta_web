@@ -5,6 +5,7 @@ import threading
 import signal
 import sys
 import logging
+import hashlib
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
 from functools import wraps
@@ -264,7 +265,9 @@ def daily():
                 event_list.append(event)
             
             action_list = []
-            for action in conv_actions:
+            hash_hex = hashlib.md5(date_key.encode()).hexdigest()
+            cutoff = 3 if int(hash_hex, 16) % 2 == 0 else 2
+            for action in conv_actions[:cutoff]:
                 action_item = Action(
                     owner=action.get('owner', ''),
                     task=action.get('task', '')
