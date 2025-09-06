@@ -153,7 +153,7 @@ def index():
         try:
             # 生成摘要
             summary = llm_utils.gen_conversation_summary(content)
-            add_conversation(content, summary, script_time)
+            add_conversation(g.current_user.id, content, summary, script_time)
             flash('对话已成功处理', 'success')
 
             # 启动后台线程更新长期记忆
@@ -166,7 +166,7 @@ def index():
                             user.memory_updating = True
                             db.session.commit()
 
-                        latest_memory = get_latest_memory()
+                        latest_memory = get_latest_memory(user_id)
                         if latest_memory:
                             memory_topics = json.loads(latest_memory.content)['topics']
                             latest_day_topics = json.loads(summary)['topics']
@@ -174,7 +174,7 @@ def index():
                         else:
                             new_memory = json.dumps({'topics': json.loads(summary)['topics']}, ensure_ascii=False)
 
-                        add_memory(new_memory)
+                        add_memory(user_id, new_memory)
                         memory_bank.add_memory('\n\n'.join(x['information'] for x in json.loads(summary)['topics']), created_date=script_time.isoformat())
                         app.logger.info('记忆更新成功')
                         app.logger.info(f'最新的记忆：{memory_bank.get_all()}')
@@ -210,7 +210,7 @@ def index():
 @login_required
 def current_event():
     try:
-        memory = get_latest_memory()
+        memory = get_latest_memory(g.current_user.id)
         event_list = []
         if memory:
             memory_data = json.loads(memory.content)
@@ -236,7 +236,7 @@ def current_event():
 def daily():
     try:
         # 查询所有对话并按日期分组
-        conversations = get_all_conversations()
+        conversations = get_all_conversations(g.current_user.id)
         
         # 按日期分组处理
         daily_conversations = {}
@@ -288,24 +288,40 @@ def daily():
 @app.route('/clear-database', methods=['POST'])
 @login_required
 def clear_database():
-    # 检查是否为管理员用户
-    if g.current_user.username != 'admin':
-        return jsonify({'status': 'error', 'message': '权限不足，只有管理员可以清空数据库'}), 403
     # 验证确认参数
     confirm_admin = request.form.get('confirmAdmin')
-    if confirm_admin != 'admin':
+    if confirm_admin == 'admin' and g.current_user.username == 'admin':
+        # 管理员清空所有数据
+        try:
+            deletion_counts = clear_all_data()  # 不传user_id表示清空所有数据
+            memory_bank.delete_memory()
+            print('All data cleared')
+            return jsonify({
+                'status': 'success', 
+                'message': '所有数据已成功清空',
+                'deleted_records': deletion_counts
+            })
+        except Exception as e:
+            print(f'清空所有数据失败: {str(e)}')
+            db.session.rollback()
+            return jsonify({'status': 'error', 'message': str(e)}), 500
+    elif confirm_admin == 'confirm':
+        # 普通用户清空自己的数据
+        try:
+            deletion_counts = clear_all_data(g.current_user.id)
+            # memory_bank.delete_memory()  # 注意：这里保留了原有的memory_bank操作
+            print('User data cleared')
+            return jsonify({
+                'status': 'success', 
+                'message': '您的数据已成功清空',
+                'deleted_records': deletion_counts
+            })
+        except Exception as e:
+            print(f'清空用户数据失败: {str(e)}')
+            db.session.rollback()
+            return jsonify({'status': 'error', 'message': str(e)}), 500
+    else:
         return jsonify({'status': 'error', 'message': '请输入正确的确认信息'}), 400
-    
-    try:
-        # 删除所有数据
-        deletion_counts = clear_all_data()
-        memory_bank.delete_memory()
-        print('Clear finished')
-        return jsonify({
-            'status': 'success', 
-            'message': 'Database cleared successfully',
-            'deleted_records': deletion_counts
-        })
     except Exception as e:
         print(f'Clear failed by error: {str(e)}')
         db.session.rollback()
@@ -392,11 +408,11 @@ def qa():
             model = form.model.data
             try:
                 memory_topics = {}
-                latest_memory = get_latest_memory()
+                latest_memory = get_latest_memory(g.current_user.id)
                 if latest_memory:
                     memory_topics = json.loads(latest_memory.content)['topics']
                 if Config.QA_MODE == 'RAW':
-                    conversations = get_all_conversations()
+                    conversations = get_all_conversations(g.current_user.id)
                     for conv in conversations:
                         content = conv.content
                         content_list.append(content)
