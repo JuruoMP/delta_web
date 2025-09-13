@@ -1,6 +1,6 @@
 from datetime import date
 from extensions import db
-from models import Event, Conversation, Memory
+from models import Event, Conversation, Memory, Action
 
 
 def add_event(user_id, date, title, details):

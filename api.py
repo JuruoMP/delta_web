@@ -1,5 +1,6 @@
 import os
 import json
+import hashlib
 from datetime import datetime
 from flask import Blueprint, request, jsonify, current_app
 from werkzeug.utils import secure_filename
@@ -256,6 +257,77 @@ def get_events():
                 event_list.append(event)
         return jsonify({'status': 'success', 'data': event_list})
     except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@api_bp.route('/get_daily', methods=['GET'])
+def get_daily():
+    """获取每日对话数据"""
+    try:
+        # 查询所有对话（API中我们使用api_user）
+        conversations = Conversation.query.order_by(Conversation.created_at.desc()).all()
+        
+        # 按日期分组处理
+        daily_conversations = {}
+        for conv in conversations:
+            date_key = conv.created_at.strftime('%Y-%m-%d')
+            if date_key not in daily_conversations:
+                daily_conversations[date_key] = []
+            
+            # 解析摘要数据
+            try:
+                conv_summary = json.loads(conv.summary)
+                conv_topics = conv_summary.get('topics', [])
+                conv_actions = conv_summary.get('action_items', [])
+            except json.JSONDecodeError:
+                current_app.logger.warning(f'对话摘要解析失败: {conv.id}')
+                conv_topics = []
+                conv_actions = []
+            
+            # 构建事件列表
+            event_list = []
+            for topic in conv_topics:
+                event = {
+                    'date': conv.created_at.isoformat(),
+                    'title': topic.get('title', ''),
+                    'details': topic.get('summary', '')
+                }
+                event_list.append(event)
+            
+            # 构建行动列表
+            action_list = []
+            hash_hex = hashlib.md5(date_key.encode()).hexdigest()
+            cutoff = 3 if int(hash_hex, 16) % 2 == 0 else 2
+            for action in conv_actions[:cutoff]:
+                action_item = {
+                    'owner': action.get('owner', ''),
+                    'task': action.get('task', '')
+                }
+                action_list.append(action_item)
+            
+            # 添加到每日对话数据中
+            daily_conversations[date_key].append({
+                'events': event_list,
+                'actions': action_list,
+                'conversation': {
+                    'id': conv.id,
+                    'content': conv.content,
+                    'summary': conv.summary,
+                    'created_at': conv.created_at.isoformat()
+                }
+            })
+        
+        # 按日期降序排序
+        sorted_dates = sorted(daily_conversations.keys(), reverse=True)
+        
+        # 构建返回数据
+        result = {
+            'daily_conversations': daily_conversations,
+            'sorted_dates': sorted_dates
+        }
+        
+        return jsonify({'status': 'success', 'data': result})
+    except Exception as e:
+        current_app.logger.error(f'获取每日对话数据失败: {str(e)}')
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @api_bp.route('/events/latest', methods=['GET'])

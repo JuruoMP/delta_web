@@ -26,8 +26,8 @@ class LLMUtils:
         with open(file_path, 'r', encoding='utf-8') as f:
             return f.read().strip()
 
-    def gen_conversation_summary(self, json_content, model_name=None):
-        summary_prompt_str = self.summary_prompt_template.replace('{{json_str}}', json.dumps(json_content, indent=2, ensure_ascii=False))
+    def gen_conversation_summary(self, content, model_name=None):
+        summary_prompt_str = self.summary_prompt_template.replace('{{json_str}}', json.dumps({'content': content}, indent=2, ensure_ascii=False))
         return self.llm_service.chat(self.summary_system_prompt, summary_prompt_str, model_name=model_name)
 
     def gen_memory(self, historical_data, latest_day_data, model_name=None):

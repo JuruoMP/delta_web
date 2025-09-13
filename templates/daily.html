@@ -24,10 +24,10 @@
                                         <div class="list-group">
                                             {% for event_list, action_list, conversation in conversations %}
                                                 <div class="list-group-item list-group-item-action mb-3 rounded shadow-sm hover:shadow-md hover:-translate-y-1 hover:border-primary/20 transition-all duration-300 {% if loop.index % 2 == 0 %}bg-white{% else %}bg-light bg-opacity-50{% endif %}">
-                                                    <div class="d-flex w-100 justify-content-between">
+                                                    <!-- <div class="d-flex w-100 justify-content-between">
                                                         <h5 class="mb-1 fw-bold">对话 #{{ conversation.id }}</h5>
                                                         <small class="text-secondary">{{ conversation.created_at.strftime('%H:%M:%S') }}</small>
-                                                    </div>
+                                                    </div> -->
                                                     <strong class="d-block mb-2 text-primary mt-4">事件:</strong>
                                                     {% for event in event_list %}
                                                     <div class="list">

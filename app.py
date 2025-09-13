@@ -159,7 +159,7 @@ def index():
             # 启动后台线程更新长期记忆
             @copy_current_request_context
             def update_memory_background(user_id):
-                if True: #try:
+                try:
                     with app.app_context():
                         user = User.query.get(user_id)
                         if user:
@@ -185,7 +185,7 @@ def index():
                             if user:
                                 user.memory_updating = False
                                 db.session.commit()
-                else: #except Exception as e:
+                except Exception as e:
                     app.logger.error(f'后台更新记忆失败: {str(e)}')
                     # 确保清除更新状态
                     with app.app_context():
@@ -322,10 +322,6 @@ def clear_database():
             return jsonify({'status': 'error', 'message': str(e)}), 500
     else:
         return jsonify({'status': 'error', 'message': '请输入正确的确认信息'}), 400
-    except Exception as e:
-        print(f'Clear failed by error: {str(e)}')
-        db.session.rollback()
-        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 # 清空数据库确认页面路由
 @app.route('/clear-database-confirm', methods=['GET'])
