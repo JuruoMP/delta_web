@@ -20,5 +20,28 @@
             <div class="alert alert-info">暂无记忆内容</div>
         {% endif %}
     </div>
+    
+    <!-- 分页控制 -->
+    {% if memories %}
+    <div class="mt-4 d-flex justify-content-between">
+        <div>
+            {% if current_page > 1 %}
+            <a href="/memories?page={{ current_page - 1 }}" class="btn btn-primary">上一页</a>
+            {% else %}
+            <button class="btn btn-primary" disabled>上一页</button>
+            {% endif %}
+        </div>
+        <div class="text-center">
+            <span>第 {{ current_page }} 页</span>
+        </div>
+        <div>
+            {% if has_more %}
+            <a href="/memories?page={{ current_page + 1 }}" class="btn btn-primary">下一页</a>
+            {% else %}
+            <button class="btn btn-primary" disabled>下一页</button>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}

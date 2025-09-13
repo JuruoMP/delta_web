@@ -22,7 +22,8 @@ api_bp = Blueprint('api', __name__)
 # 初始化服务
 llm_service = LLMService()
 llm_utils = LLMUtils(llm_service)
-memory_bank = MemoryBank(user="api_user")
+# 延迟初始化memory_bank，在具体API端点中根据用户上下文初始化
+memory_bank = None
 
 # 声明全局变量
 asr_service = None
@@ -101,6 +102,9 @@ def create_conversation():
             return jsonify({'status': 'error', 'message': '缺少对话内容'}), 400
 
         content = data['content']
+        # 从请求中获取用户标识，如果没有则使用默认值
+        user_id = data.get('user_id', 'default_user')
+        
         try:
             # 解析日期
             line0 = content.split('\n', 1)[0].strip()
@@ -115,7 +119,7 @@ def create_conversation():
         db.session.commit()
 
         # 异步更新记忆
-        def update_memory_background():
+        def update_memory_background(user_id):
             try:
                 latest_memory = Memory.query.order_by(Memory.updated_at.desc()).first()
                 if latest_memory:
@@ -128,13 +132,16 @@ def create_conversation():
                 memory = Memory(content=new_memory)
                 db.session.add(memory)
                 db.session.commit()
-                memory_bank.add_memory('\n\n'.join(x['information'] for x in json.loads(summary)['topics']), created_date=script_time.isoformat())
+                
+                # 为特定用户创建memory_bank实例
+                user_memory_bank = MemoryBank(user=user_id)
+                user_memory_bank.add_memory('\n\n'.join(x['information'] for x in json.loads(summary)['topics']), created_date=script_time.isoformat())
             except Exception as e:
                 print(f'后台更新记忆失败: {str(e)}')
 
         # 启动后台线程（注意：在生产环境中应使用更可靠的异步任务处理方式）
         import threading
-        memory_thread = threading.Thread(target=update_memory_background)
+        memory_thread = threading.Thread(target=update_memory_background, args=(user_id,))
         memory_thread.daemon = True
         memory_thread.start()
 
@@ -161,14 +168,17 @@ def ask_question():
 
         question = data['question']
         model = data.get('model', 'default')
+        # 从请求中获取用户标识，如果没有则使用默认值
+        user_id = data.get('user_id', 'default_user')
 
         memory_topics = {}
         latest_memory = Memory.query.order_by(Memory.updated_at.desc()).first()
         if latest_memory:
             memory_topics = json.loads(latest_memory.content)['topics']
 
-        # 使用MEM0模式回答
-        content_list = memory_bank.extract_qa_memorries(question)
+        # 使用MEM0模式回答，为特定用户创建memory_bank实例
+        user_memory_bank = MemoryBank(user=user_id)
+        content_list = user_memory_bank.extract_qa_memorries(question)
         answer = llm_utils.get_qa_answer_soft(question, memory_topics, content_list, model_name=model)
 
         return jsonify({
@@ -185,16 +195,39 @@ def ask_question():
 # 记忆相关API
 @api_bp.route('/memories', methods=['GET'])
 def get_memories():
-    """获取所有记忆"""
+    """获取所有记忆，支持分页"""
     try:
-        all_memories = memory_bank.get_all()
+        # 从请求参数中获取用户标识，如果没有则使用默认值
+        user_id = request.args.get('user_id', 'default_user')
+        
+        # 获取分页参数
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 50, type=int)
+        offset = (page - 1) * per_page
+        
+        # 为特定用户创建memory_bank实例
+        user_memory_bank = MemoryBank(user=user_id)
+        all_memories = user_memory_bank.get_all(limit=per_page, offset=offset)
+        
         formatted_memories = []
         for mem in sorted(all_memories['results'], key=lambda x: x['created_at'], reverse=True):
             formatted_memories.append({
                 'content': mem['memory'],
                 'created_at': mem.get('created_at', 'Unknown date')
             })
-        return jsonify({'status': 'success', 'data': formatted_memories})
+        
+        # 返回包含分页信息的响应
+        pagination = all_memories.get('pagination', {})
+        return jsonify({
+            'status': 'success',
+            'data': formatted_memories,
+            'pagination': {
+                'total': pagination.get('total', 0),
+                'page': page,
+                'per_page': per_page,
+                'has_more': pagination.get('has_more', False)
+            }
+        })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 

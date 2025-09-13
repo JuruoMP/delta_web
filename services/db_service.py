@@ -66,16 +66,26 @@ def clear_conversations(user_id):
 
 def clear_all_data(user_id=None):
     """清空数据库中所有表的数据并返回删除记录数
-    如果提供了user_id，则只清空该用户的数据；否则清空所有数据（管理员使用）"""
+    如果提供了user_id，则只清空该用户的数据；否则清空所有数据（管理员使用）
+    同时会清除用户的memory_updating标记"""
     try:
+        # 清除用户的memory_updating标记
+        from models import User
         if user_id:
             # 只清空指定用户的数据
+            user = User.query.get(user_id)
+            if user:
+                user.memory_updating = False
+            
             deleted_conversations = db.session.query(Conversation).filter_by(user_id=user_id).delete()
             deleted_events = db.session.query(Event).filter_by(user_id=user_id).delete()
             deleted_memories = db.session.query(Memory).filter_by(user_id=user_id).delete()
             deleted_actions = db.session.query(Action).filter_by(user_id=user_id).delete()
         else:
             # 清空所有数据（管理员使用）
+            # 将所有用户的memory_updating标记设为False
+            db.session.query(User).update({User.memory_updating: False})
+            
             deleted_conversations = db.session.query(Conversation).delete()
             deleted_events = db.session.query(Event).delete()
             deleted_memories = db.session.query(Memory).delete()

@@ -158,7 +158,7 @@ def index():
 
             # 启动后台线程更新长期记忆
             @copy_current_request_context
-            def update_memory_background(user_id):
+            def update_memory_background(user_id, username):
                 try:
                     with app.app_context():
                         user = User.query.get(user_id)
@@ -170,14 +170,17 @@ def index():
                         if latest_memory:
                             memory_topics = json.loads(latest_memory.content)['topics']
                             latest_day_topics = json.loads(summary)['topics']
+
                             new_memory = llm_utils.gen_memory(memory_topics, latest_day_topics)
                         else:
                             new_memory = json.dumps({'topics': json.loads(summary)['topics']}, ensure_ascii=False)
 
                         add_memory(user_id, new_memory)
-                        memory_bank.add_memory('\n\n'.join(x['information'] for x in json.loads(summary)['topics']), created_date=script_time.isoformat())
+                        # 为当前用户创建memory_bank实例
+                        user_memory_bank = MemoryBank(user=username)
+                        user_memory_bank.add_memory('\n\n'.join(x['information'] for x in json.loads(summary)['topics']), created_date=script_time.isoformat())
                         app.logger.info('记忆更新成功')
-                        app.logger.info(f'最新的记忆：{memory_bank.get_all()}')
+                        # app.logger.info(f'最新的记忆：{user_memory_bank.get_all()}')
 
                         # 更新用户状态
                         with app.app_context():
@@ -194,8 +197,8 @@ def index():
                             user.memory_updating = False
                             db.session.commit()
 
-            # 启动后台线程
-            memory_thread = threading.Thread(target=update_memory_background, args=(g.current_user.id,))
+            # 启动后台线程，传入用户ID和用户名
+            memory_thread = threading.Thread(target=update_memory_background, args=(g.current_user.id, g.current_user.username))
             memory_thread.start()
 
             return redirect(url_for('daily'))
@@ -445,7 +448,15 @@ def qa():
 @login_required
 def memories():
     try:
-        all_memories = memory_bank.get_all()
+        # 为当前登录用户创建临时的MemoryBank实例，确保获取正确的用户记忆
+        user_memory_bank = MemoryBank(user=g.current_user.username)
+        # 获取当前页的记忆数据（限制为50条，避免一次性加载过多数据）
+        page = request.args.get('page', 1, type=int)
+        per_page = 50  # 每页显示的记忆数量
+        offset = (page - 1) * per_page
+        
+        all_memories = user_memory_bank.get_all(limit=per_page, offset=offset)
+        
         # 格式化记忆数据以便模板使用
         formatted_memories = []
         for mem in sorted(all_memories['results'], key=lambda x: x['created_at'], reverse=True):
@@ -457,9 +468,12 @@ def memories():
         app.logger.error(f'获取记忆失败: {str(e)}')
         flash('获取记忆时发生错误', 'danger')
         formatted_memories = []
+        all_memories = {'pagination': {'has_more': False}}
     # 检查内存更新状态
     memory_updating = g.current_user.memory_updating if g.current_user else False
-    return render_template('memories.html', memories=formatted_memories, memory_updating=memory_updating)
+    return render_template('memories.html', memories=formatted_memories, memory_updating=memory_updating, 
+                           has_more=all_memories.get('pagination', {}).get('has_more', False), 
+                           current_page=page)
 
 # 创建数据库表
 with app.app_context():

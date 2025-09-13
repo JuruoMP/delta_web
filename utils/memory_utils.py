@@ -11,16 +11,18 @@ class MemoryBank:
         return cls._instance
 
     def __init__(self, user):
-        if hasattr(self, 'initialized') and self.initialized:
-            return
-        self.initialized = True
-        self.config = {
-            "llm": {"provider": "doubao", "config": {"enable_vision": True, "vision_details": "auto"}}, 
-            "embedder": {"provider": "doubao"}, 
-            "vector_store": {"provider": "qdrant", "config": {"host": "localhost", "embedding_model_dims": 2560, "on_disk": True, "path": "./qdrant_data"}},
-        }
-        self.memory = Memory.from_config(self.config)
+        # 无论是否已初始化，都更新user属性
         self.user = user
+        
+        # 只在第一次初始化时设置配置和创建memory实例
+        if not hasattr(self, 'initialized') or not self.initialized:
+            self.initialized = True
+            self.config = {
+                "llm": {"provider": "doubao", "config": {"enable_vision": True, "vision_details": "auto"}},
+                "embedder": {"provider": "doubao"},
+                "vector_store": {"provider": "qdrant", "config": {"host": "localhost", "embedding_model_dims": 2560, "on_disk": True, "path": "./qdrant_data"}},
+            }
+            self.memory = Memory.from_config(self.config)
 
     def add_memory(self, message, created_date=None):
         message_list = [{"role": "user", "content": message}]
@@ -37,8 +39,40 @@ class MemoryBank:
         # assert False, "DO NOT CLEAR MEMORY!!!"
         self.memory.delete_all(user_id=self.user)
 
-    def get_all(self):
-        return self.memory.get_all(user_id=self.user)
+    def get_all(self, limit=100, offset=0):
+        """获取用户的所有记忆，支持分页以减少内存使用
+        
+        Args:
+            limit: 限制返回的记忆数量，默认100条
+            offset: 偏移量，用于分页
+        
+        Returns:
+            包含分页后记忆数据的字典
+        """
+        # 获取所有记忆
+        all_memories = self.memory.get_all(user_id=self.user)
+        
+        # 如果结果为空，直接返回
+        if not all_memories or 'results' not in all_memories:
+            return all_memories
+        
+        # 应用分页
+        results = all_memories['results']
+        total = len(results)
+        
+        # 计算分页后的结果
+        paginated_results = results[offset:offset + limit]
+        
+        # 返回分页后的结果和分页信息
+        return {
+            'results': paginated_results,
+            'pagination': {
+                'total': total,
+                'limit': limit,
+                'offset': offset,
+                'has_more': offset + limit < total
+            }
+        }
 
     def close(self):
         """关闭Qdrant客户端连接"""
