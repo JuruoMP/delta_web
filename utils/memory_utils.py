@@ -44,10 +44,8 @@ class MemoryBank:
         """关闭Qdrant客户端连接"""
         if hasattr(self.memory, 'vector_store') and hasattr(self.memory.vector_store, 'client'):
             try:
-                # 正确关闭Qdrant客户端连接
-                if hasattr(self.memory.vector_store.client, 'close'):
-                    self.memory.vector_store.client.close()
-                print("Qdrant客户端已成功关闭")
+                # 移除客户端关闭调用，避免提前释放资源
+                pass
             except Exception as e:
                 print(f"关闭Qdrant连接时出错: {e}")
 
@@ -64,15 +62,15 @@ class MemoryBank:
         return date_obj.strftime("%Y-%m-%d")
 
 
+def unittest_memory():
+    memory_bank = MemoryBank("test_user")
+    memory_bank.add_memory("A是B的好朋友，A今天去看电影没有带B，B很伤心。")
+    memory_bank.add_memory("A喜欢看科幻电影，B喜欢看喜剧。")
+    memory_bank.add_memory("A今天去超市买菜遇上了C，C说买的是B推荐的商品。")
+    # print(memory_bank.get_all())
+    print(memory_bank.search_memory("A喜欢看什么？"))
+    # memory_bank.delete_memory()
+    # print(memory_bank.get_all())
+    
 if __name__ == '__main__':
-    def unittest_memory():
-        memory_bank = MemoryBank("test_user")
-        memory_bank.add_memory("A是B的好朋友，A今天去看电影没有带B，B很伤心。")
-        memory_bank.add_memory("A喜欢看科幻电影，B喜欢看喜剧。")
-        memory_bank.add_memory("A今天去超市买菜遇上了C，C说买的是B推荐的商品。")
-        # print(memory_bank.get_all())
-        print(memory_bank.search_memory("A喜欢看什么？"))
-        # memory_bank.delete_memory()
-        # print(memory_bank.get_all())
-        
     unittest_memory()
