@@ -43,13 +43,8 @@ class LLMService:
         retries = 0
         while retries < max_retries:
             try:
-                # if self.model == 'doubao-1.6':
-                #     response = self.model_client.chat.completions.create(model=self.conf["model_name"], messages=messages, max_tokens=self.conf["max_tokens"], thinking={"type":"disabled"})
-                # else:
                 response = self.model_clients[model].chat.completions.create(model=self.model_configs[model]["model_id"], messages=messages)
                 return response
-            # except openai.OpenAIError as e:
-            #     print(f"OpenAI error occurred: {e}")
             except Exception as e:
                 print(f"An error occurred: {e}")
             retries += 1
@@ -57,6 +52,23 @@ class LLMService:
             print(f"Retrying... ({retries}/{max_retries}), sleep: {_delay}s")
             time.sleep(_delay)
         raise Exception("API call failed after maximum retries")
+        
+    def stream_chat_completion(self, messages, model):
+        """流式获取AI响应"""
+        try:
+            # 使用stream=True参数开启流式响应
+            response = self.model_clients[model].chat.completions.create(
+                model=self.model_configs[model]["model_id"], 
+                messages=messages,
+                stream=True
+            )
+            for chunk in response:
+                if hasattr(chunk, 'choices') and chunk.choices:
+                    choice = chunk.choices[0]
+                    if hasattr(choice, 'delta') and hasattr(choice.delta, 'content') and choice.delta.content:
+                        yield choice.delta.content
+        except Exception as e:
+            print(f"Streaming error occurred: {e}")
 
     def chat(self, system_prompt, prompt, model_name=None):
         messages = []
@@ -80,6 +92,37 @@ class LLMService:
         except Exception as e:
             print(f"Final error: {e}")
             return ''
+    
+    def stream_chat(self, system_prompt, prompt, model_name=None):
+        """流式生成AI回复"""
+        messages = []
+        if len(system_prompt) > 0:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        try:
+            model = model_name or self.default_model
+            if model not in self.model_configs:
+                raise ValueError(f"Unsupported model: {model}")
+            
+            # 用于存储完整响应以便记录
+            full_response = ""
+            for chunk in self.stream_chat_completion(messages, model=model):
+                full_response += chunk
+                yield chunk
+            
+            # 记录完整对话
+            # call_llm_log = {
+            #     "model": model,
+            #     "messages": messages,
+            #     "response": full_response
+            # }
+            # with open('call_llm_log.json', 'a') as f:
+            #     json.dump(call_llm_log, f, ensure_ascii=False)
+            #     f.write('\n')
+        except Exception as e:
+            print(f"Streaming final error: {e}")
+            yield f"\n\n**错误**: {str(e)}"
+            return
 
     # def generate_summary(self, conversation_content, model_name=None):
     #     return llm_gen_conversation_summary(self, conversation_content, model_name=model_name)

@@ -19,6 +19,8 @@ class LLMUtils:
         self.qa_soft_system_prompt = self.load_prompt('qa_soft_system_prompt.txt')
         self.qa_soft_prompt_template_en = self.load_prompt('qa_soft_prompt_template_en.txt')
         self.qa_soft_prompt_template_zh = self.load_prompt('qa_soft_prompt_template_zh.txt')
+        self.conversation_analysis_system_prompt = self.load_prompt('conversation_analysis_system_prompt.txt')
+        self.conversation_analysis_prompt_template = self.load_prompt('conversation_analysis_prompt_template.txt')
 
     def load_prompt(self, file_name):
         """加载prompt模板文件"""
@@ -61,4 +63,35 @@ class LLMUtils:
             qa_prompt_str = self.qa_soft_prompt_template_en.replace('{{current_memory}}', current_memory_json).replace('{{retrieved_contexts}}', retrived_contexts_str).replace('{{user_query}}', user_query)
         
         return self.llm_service.chat(self.qa_soft_system_prompt, qa_prompt_str, model_name=model_name)
+
+    def stream_analyze_conversation(self, conversation_content, model_name=None, request_id=None, content_length=0):
+        """流式分析对话内容并生成结构化信息整理文档，支持从特定位置恢复"""
+        analysis_prompt_str = self.conversation_analysis_prompt_template.replace('{{conversation_content}}', conversation_content)
+        
+        # 如果提供了content_length，需要跳过前面的内容
+        if request_id and content_length > 0:
+            # 从指定位置恢复流式响应
+            full_response = ""
+            chunks = self.llm_service.stream_chat(
+                self.conversation_analysis_system_prompt,
+                analysis_prompt_str,
+                model_name=model_name
+            )
+            
+            for chunk in chunks:
+                full_response += chunk
+                # 只有当累积的内容长度超过指定的content_length时，才开始yield内容
+                if len(full_response) > content_length:
+                    # 计算需要跳过的字符数
+                    skip_count = len(full_response) - content_length
+                    # 只yield新的内容
+                    yield chunk[skip_count:]
+        else:
+            # 正常流式响应，不跳过任何内容
+            for chunk in self.llm_service.stream_chat(
+                self.conversation_analysis_system_prompt,
+                analysis_prompt_str,
+                model_name=model_name
+            ):
+                yield chunk
 

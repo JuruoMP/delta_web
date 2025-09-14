@@ -1,0 +1,517 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-5">
+    <h2>对话内容分析助手</h2>
+    
+    <div class="row">
+        <!-- 左侧输入区域 -->
+        <div class="col-md-6">
+            <form id="analysisForm" method="POST" action="{{ url_for('conversation_analysis') }}">
+                {{ form.hidden_tag() }}
+                <div class="mb-3">
+                    {{ form.conversation_text.label(class="form-label") }}
+                    {{ form.conversation_text(class="form-control", rows=15, placeholder="请输入或粘贴对话内容...") }}
+                    {% if form.conversation_text.errors %}
+                        <div class="text-danger">
+                            {% for error in form.conversation_text.errors %}
+                                {{ error }}
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+                
+                <div class="form-group mb-3">
+                    {{ form.model.label(class="form-control-label") }}
+                    {{ form.model(class="form-control") }}
+                    {% if form.model.errors %}
+                        <div class="text-danger">
+                            {% for error in form.model.errors %}
+                                {{ error }}
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+                
+                {{ form.submit(class="btn btn-primary") }}
+            </form>
+        </div>
+        
+        <!-- 右侧结果显示区域 -->
+        <div class="col-md-6">
+            <!-- 结果显示区域 -->
+            <div id="resultSection" style="display: none;">
+                <div class="bg-light p-4 rounded border" style="min-height: 400px; max-height: 600px; overflow-y: auto;">
+                    <div id="analysisResult" class="markdown-content"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// 等待DOM加载完成
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('analysisForm');
+    const resultSection = document.getElementById('resultSection');
+    const analysisResult = document.getElementById('analysisResult');
+    
+    // 确保页面加载时隐藏右侧内容
+    resultSection.style.display = 'none';
+    
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        // 清空之前的结果
+        analysisResult.innerHTML = '';
+        
+        // 显示结果区域，准备接收流式输出
+        resultSection.style.display = 'block';
+        
+        // 创建FormData
+        const formData = new FormData(form);
+        
+        try {
+            // 生成唯一请求ID，用于处理重试
+            const requestId = 'req_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            
+            // 跟踪请求状态
+            let isComplete = false;
+            let retryCount = 0;
+            const maxRetries = 3;
+            let fullMarkdown = '';
+            let receivedChunkIds = new Set(); // 用于跟踪已接收的chunk_id
+            let buffer = '';
+            
+            // 创建带超时的fetch函数
+            function fetchWithTimeout(url, options, timeout = 60000) {
+                return new Promise((resolve, reject) => {
+                    const controller = new AbortController();
+                    const signal = controller.signal;
+                    
+                    // 设置超时
+                    const timeoutId = setTimeout(() => {
+                        controller.abort();
+                        reject(new Error(`请求超时: ${timeout}ms`));
+                    }, timeout);
+                    
+                    // 发送请求
+                    fetch(url, { ...options, signal })
+                        .then(response => {
+                            clearTimeout(timeoutId);
+                            resolve(response);
+                        })
+                        .catch(error => {
+                            clearTimeout(timeoutId);
+                            reject(error);
+                        });
+                });
+            }
+            
+            // 创建智能防抖函数
+            function smartDebounce(func, minWait, charThreshold) {
+                let timeout;
+                let pendingChars = 0;
+                
+                return function(markdown) {
+                    const newChars = markdown.length - fullMarkdown.length;
+                    fullMarkdown = markdown;
+                    
+                    pendingChars += newChars;
+                    
+                    // 如果达到字符阈值，立即执行并重置计数器
+                    if (pendingChars >= charThreshold) {
+                        clearTimeout(timeout);
+                        func(markdown);
+                        pendingChars = 0;
+                        return;
+                    }
+                    
+                    // 否则，设置最小等待时间
+                    clearTimeout(timeout);
+                    timeout = setTimeout(() => {
+                        func(markdown);
+                        pendingChars = 0;
+                    }, minWait);
+                };
+            }
+            
+            // 创建智能防抖渲染函数
+            const smartRender = smartDebounce((markdown) => {
+                // 使用requestAnimationFrame进一步提高渲染平滑度
+                requestAnimationFrame(() => {
+                    analysisResult.innerHTML = marked.parse(markdown);
+                });
+            }, 50, 20);
+            
+            // 处理流式数据的函数
+            function processStreamData() {
+                if (isComplete) return;
+                
+                // 创建包含请求ID和已处理内容长度的FormData，用于恢复
+                const retryFormData = new FormData();
+                for (const [key, value] of formData.entries()) {
+                    retryFormData.append(key, value);
+                }
+                
+                retryFormData.append('request_id', requestId);
+                retryFormData.append('content_length', fullMarkdown.length);
+                
+                fetchWithTimeout('/conversation_analysis_stream', {
+                    method: 'POST',
+                    body: retryFormData,
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                }, 60000).then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    
+                    // 获取响应体的读取器
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    
+                    // 读取流的函数
+                    function read() {
+                        reader.read().then(({done, value}) => {
+                            if (done) {
+                                // 流结束时，确保最终内容被渲染
+                                if (!isComplete) {
+                                    isComplete = true;
+                                    analysisResult.innerHTML = marked.parse(fullMarkdown);
+                                }
+                                return;
+                            }
+                            
+                            // 解码接收到的数据
+                            buffer += decoder.decode(value, {stream: true});
+                            
+                            // 按行分割数据
+                            const lines = buffer.split('\n');
+                            buffer = lines.pop(); // 保留不完整的行
+                            
+                            // 处理每一行
+                            for (const line of lines) {
+                                if (line.startsWith('data:')) {
+                                    try {
+                                        const jsonStr = line.substring(5).trim();
+                                        if (jsonStr) {
+                                            const data = JSON.parse(jsonStr);
+                                            
+                                            // 处理错误信息
+                                            if (data.error) {
+                                                console.error('服务器错误:', data.error);
+                                                // 尝试重试
+                                                if (retryCount < maxRetries) {
+                                                    retryCount++;
+                                                    console.log(`尝试重试 (${retryCount}/${maxRetries})`);
+                                                    // 等待一段时间后重试
+                                                    setTimeout(() => {
+                                                        processStreamData();
+                                                    }, 1000 * Math.pow(2, retryCount - 1)); // 指数退避
+                                                } else {
+                                                    alert('读取响应流失败，已重试最大次数');
+                                                }
+                                                reader.cancel();
+                                                return;
+                                            }
+                                            
+                                            // 处理完成信号
+                                            if (data.complete) {
+                                                isComplete = true;
+                                                // 确保最终内容被渲染
+                                                analysisResult.innerHTML = marked.parse(fullMarkdown);
+                                                return;
+                                            }
+                                            
+                                            // 处理数据块，避免重复
+                                            if (data.chunk && data.chunk_id !== undefined) {
+                                                // 检查是否已接收过此chunk_id，避免重复内容
+                                                if (!receivedChunkIds.has(data.chunk_id)) {
+                                                    receivedChunkIds.add(data.chunk_id);
+                                                    
+                                                    // 将新内容添加到完整Markdown中
+                                                    fullMarkdown += data.chunk;
+                                                    
+                                                    // 智能渲染，平衡流畅度和性能
+                                                    smartRender(fullMarkdown);
+                                                }
+                                            } else if (data.chunk) {
+                                                // 兼容旧版本的响应（没有chunk_id的情况）
+                                                fullMarkdown += data.chunk;
+                                                smartRender(fullMarkdown);
+                                            }
+                                        }
+                                    } catch (e) {
+                                        console.error('解析JSON失败:', e);
+                                    }
+                                }
+                            }
+                            
+                            // 继续读取流
+                            read();
+                        }).catch(error => {
+                            console.error('读取流失败:', error);
+                            // 处理读取错误
+                            if (retryCount < maxRetries && !isComplete && !(error.name === 'AbortError')) {
+                                retryCount++;
+                                console.log(`读取流中断，尝试重试 (${retryCount}/${maxRetries})`);
+                                // 等待一段时间后重试
+                                setTimeout(() => {
+                                    processStreamData();
+                                }, 1000 * Math.pow(2, retryCount - 1)); // 指数退避
+                            } else if (!isComplete) {
+                                alert('读取响应流失败，请刷新页面重试');
+                            }
+                        });
+                    }
+                    
+                    // 开始读取流
+                    read();
+                }).catch(error => {
+                    console.error('提交请求失败:', error);
+                    // 网络错误时尝试重试
+                    if (retryCount < maxRetries && !isComplete && !(error.name === 'AbortError')) {
+                        retryCount++;
+                        console.log(`请求失败，尝试重试 (${retryCount}/${maxRetries})`);
+                        // 等待一段时间后重试
+                        setTimeout(() => {
+                            processStreamData();
+                        }, 1000 * Math.pow(2, retryCount - 1)); // 指数退避
+                    } else if (!isComplete) {
+                        alert('提交请求失败，请刷新页面重试');
+                    }
+                });
+            }
+            
+            // 开始处理流
+            processStreamData();
+        } catch (error) {
+            console.error('提交请求初始化失败:', error);
+            alert('提交请求初始化失败，请刷新页面重试');
+        }
+    });
+});</script>
+
+<!-- 引入marked.js用于Markdown渲染 -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+<style>
+/* 结果容器样式 */
+.bg-light.p-4.rounded.border {
+    background-color: #ffffff !important;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+}
+
+/* Markdown内容样式 */
+.markdown-content {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    color: #333;
+}
+
+.markdown-content h1, .markdown-content h2, .markdown-content h3, .markdown-content h4, .markdown-content h5, .markdown-content h6 {
+    color: #2c3e50;
+    margin-top: 1.8rem;
+    margin-bottom: 1rem;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.markdown-content h1 {
+    font-size: 2rem;
+    border-bottom: 2px solid #eaecef;
+    padding-bottom: 0.3em;
+}
+
+.markdown-content h2 {
+    font-size: 1.5rem;
+    border-bottom: 1px solid #eaecef;
+    padding-bottom: 0.3em;
+}
+
+.markdown-content h3 {
+    font-size: 1.25rem;
+}
+
+.markdown-content p {
+    margin-bottom: 1.2rem;
+    text-align: justify;
+}
+
+.markdown-content a {
+    color: #0366d6;
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+.markdown-content a:hover {
+    color: #0256b3;
+    text-decoration: underline;
+}
+
+/* 列表样式 */
+.markdown-content ul, .markdown-content ol {
+    margin-bottom: 1.2rem;
+    padding-left: 1.8rem;
+}
+
+.markdown-content ul {
+    list-style-type: disc;
+}
+
+.markdown-content ol {
+    list-style-type: decimal;
+}
+
+.markdown-content li {
+    margin-bottom: 0.5rem;
+}
+
+.markdown-content li p {
+    margin-bottom: 0.5rem;
+}
+
+/* 强调样式 */
+.markdown-content strong {
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.markdown-content em {
+    font-style: italic;
+    color: #555;
+}
+
+.markdown-content code {
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    background-color: #f6f8fa;
+    color: #e74c3c;
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+    font-size: 0.9em;
+}
+
+/* 代码块样式 */
+.markdown-content pre {
+    background-color: #f6f8fa;
+    border-radius: 6px;
+    padding: 16px;
+    margin-bottom: 1.2rem;
+    overflow-x: auto;
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 0.9em;
+    line-height: 1.5;
+    border: 1px solid #e1e4e8;
+}
+
+.markdown-content pre code {
+    background-color: transparent;
+    color: inherit;
+    padding: 0;
+    border-radius: 0;
+}
+
+/* 引用样式 */
+.markdown-content blockquote {
+    border-left: 4px solid #e9ecef;
+    padding-left: 1rem;
+    margin-left: 0;
+    margin-right: 0;
+    margin-bottom: 1.2rem;
+    color: #6c757d;
+    font-style: italic;
+}
+
+/* 表格样式 */
+.markdown-content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1.2rem;
+    font-size: 0.95em;
+}
+
+.markdown-content table th {
+    background-color: #f8f9fa;
+    font-weight: 600;
+    text-align: left;
+    padding: 8px 12px;
+    border: 1px solid #dee2e6;
+}
+
+.markdown-content table td {
+    padding: 8px 12px;
+    border: 1px solid #dee2e6;
+}
+
+.markdown-content table tr:nth-child(even) {
+    background-color: #f8f9fa;
+}
+
+/* 图片样式 */
+.markdown-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 4px;
+    margin: 1rem 0;
+    display: block;
+}
+
+/* 水平分隔线样式 */
+.markdown-content hr {
+    border: 0;
+    height: 1px;
+    background-color: #e9ecef;
+    margin: 2rem 0;
+}
+
+/* 美化滚动条 */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .markdown-content {
+        font-size: 14px;
+    }
+    
+    .markdown-content h1 {
+        font-size: 1.8rem;
+    }
+    
+    .markdown-content h2 {
+        font-size: 1.4rem;
+    }
+    
+    .markdown-content h3 {
+        font-size: 1.2rem;
+    }
+}
+
+/* 平滑过渡效果 - 移除可能导致闪烁的动画 */
+.markdown-content {
+    transition: opacity 0.2s ease-in-out;
+}
+</style>
+{% endblock %}

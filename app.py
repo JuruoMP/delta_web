@@ -84,6 +84,11 @@ class QAForm(FlaskForm):
     model = SelectField('模型选择', choices=[(model, model) for model in llm_service.model_configs.keys()], validators=[DataRequired()])
     submit = SubmitField('获取回答')
 
+class ConversationAnalysisForm(FlaskForm):
+    conversation_text = TextAreaField('对话内容', validators=[DataRequired()])
+    model = SelectField('模型选择', choices=[(model, model) for model in llm_service.model_configs.keys()], validators=[DataRequired()])
+    submit = SubmitField('分析对话')
+
 class AudioUploadForm(FlaskForm):
     audio_file = FileField('音频文件', validators=[DataRequired()])
     submit = SubmitField('上传并处理')
@@ -394,6 +399,63 @@ def audio_upload():
                 flash(f'音频处理失败: {str(e)}', 'danger')
                 return redirect(url_for('audio_upload'))
     return render_template('audio_upload.html', form=form)
+
+@app.route('/conversation_analysis', methods=['GET', 'POST'])
+@login_required
+def conversation_analysis():
+    form = ConversationAnalysisForm()
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        if form.validate_on_submit():
+            conversation_text = form.conversation_text.data
+            model = form.model.data
+            try:
+                # 调用LLM分析对话内容
+                analysis_result = llm_utils.analyze_conversation(conversation_text, model_name=model)
+                return jsonify({'status': 'success', 'analysis_result': analysis_result})
+            except Exception as e:
+                app.logger.error(f'分析对话内容失败: {str(e)}')
+                return jsonify({'status': 'error', 'message': f'分析对话内容失败: {str(e)}'})
+        else:
+            return jsonify({'status': 'error', 'message': '表单验证失败', 'errors': form.errors})
+    return render_template('conversation_analysis.html', form=form)
+
+@app.route('/conversation_analysis_stream', methods=['POST'])
+@login_required
+def conversation_analysis_stream():
+    """流式处理对话分析请求"""
+    form = ConversationAnalysisForm()
+    if form.validate_on_submit() or 'request_id' in request.form:
+        # 获取基本参数
+        conversation_text = form.conversation_text.data if form.conversation_text.data else request.form.get('conversation_text')
+        model = form.model.data if form.model.data else request.form.get('model')
+        
+        # 获取恢复参数
+        request_id = request.form.get('request_id')
+        content_length = int(request.form.get('content_length', 0))
+        
+        def generate():
+            try:
+                # 使用流式分析对话内容，支持从特定位置恢复
+                for chunk_idx, chunk in enumerate(llm_utils.stream_analyze_conversation(
+                        conversation_text, 
+                        model_name=model, 
+                        request_id=request_id,
+                        content_length=content_length
+                )):
+                    # 为每个chunk添加唯一ID，便于前端去重
+                    yield f'data: {json.dumps({"chunk": chunk, "chunk_id": chunk_idx})}\n\n'
+                # 发送完成信号
+                yield 'data: {"complete": true}\n\n'
+            except Exception as e:
+                app.logger.error(f'流式分析对话内容失败: {str(e)}')
+                yield f'data: {json.dumps({"error": str(e)})}\n\n'
+        
+        # 返回流式响应
+        return app.response_class(generate(), mimetype='text/event-stream')
+    else:
+        # 如果表单验证失败，返回错误信息
+        return jsonify({'status': 'error', 'message': '表单验证失败', 'errors': form.errors}), 400
+
 
 @app.route('/qa', methods=['GET', 'POST'])
 @login_required
