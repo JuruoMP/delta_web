@@ -33,6 +33,20 @@
                     {% endif %}
                 </div>
                 
+                {% if g.current_user and g.current_user.username == 'admin' %}
+                <div class="form-group mb-3">
+                    {{ form.system_prompt.label(class="form-control-label") }}
+                    {{ form.system_prompt(class="form-control", rows=5, placeholder="请输入自定义的system prompt，留空则使用默认值") }}
+                    {% if form.system_prompt.errors %}
+                        <div class="text-danger">
+                            {% for error in form.system_prompt.errors %}
+                                {{ error }}
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+                {% endif %}
+                
                 {{ form.submit(class="btn btn-primary") }}
             </form>
         </div>

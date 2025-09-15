@@ -87,6 +87,7 @@ class QAForm(FlaskForm):
 class ConversationAnalysisForm(FlaskForm):
     conversation_text = TextAreaField('对话内容', validators=[DataRequired()])
     model = SelectField('模型选择', choices=[(model, model) for model in llm_service.model_configs.keys()], validators=[DataRequired()])
+    system_prompt = TextAreaField('System Prompt', validators=[])
     submit = SubmitField('分析对话')
 
 class AudioUploadForm(FlaskForm):
@@ -408,9 +409,10 @@ def conversation_analysis():
         if form.validate_on_submit():
             conversation_text = form.conversation_text.data
             model = form.model.data
+            system_prompt = form.system_prompt.data.strip() if hasattr(form, 'system_prompt') and form.system_prompt.data else None
             try:
                 # 调用LLM分析对话内容
-                analysis_result = llm_utils.analyze_conversation(conversation_text, model_name=model)
+                analysis_result = llm_utils.analyze_conversation(conversation_text, model_name=model, system_prompt=system_prompt)
                 return jsonify({'status': 'success', 'analysis_result': analysis_result})
             except Exception as e:
                 app.logger.error(f'分析对话内容失败: {str(e)}')
@@ -428,6 +430,7 @@ def conversation_analysis_stream():
         # 获取基本参数
         conversation_text = form.conversation_text.data if form.conversation_text.data else request.form.get('conversation_text')
         model = form.model.data if form.model.data else request.form.get('model')
+        system_prompt = form.system_prompt.data.strip() if hasattr(form, 'system_prompt') and form.system_prompt.data else request.form.get('system_prompt')
         
         # 获取恢复参数
         request_id = request.form.get('request_id')
@@ -440,7 +443,8 @@ def conversation_analysis_stream():
                         conversation_text, 
                         model_name=model, 
                         request_id=request_id,
-                        content_length=content_length
+                        content_length=content_length,
+                        system_prompt=system_prompt
                 )):
                     # 为每个chunk添加唯一ID，便于前端去重
                     yield f'data: {json.dumps({"chunk": chunk, "chunk_id": chunk_idx})}\n\n'

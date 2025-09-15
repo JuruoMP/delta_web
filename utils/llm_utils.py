@@ -1,5 +1,5 @@
-import json
 import os
+import json
 from services.llm_service import LLMService
 
 class LLMUtils:
@@ -64,16 +64,28 @@ class LLMUtils:
         
         return self.llm_service.chat(self.qa_soft_system_prompt, qa_prompt_str, model_name=model_name)
 
-    def stream_analyze_conversation(self, conversation_content, model_name=None, request_id=None, content_length=0):
+    def analyze_conversation(self, conversation_content, model_name=None, system_prompt=None):
+        """分析对话内容并生成结构化信息整理文档"""
+        analysis_prompt_str = self.conversation_analysis_prompt_template.replace('{{conversation_content}}', conversation_content)
+        
+        # 使用自定义的system_prompt或默认的system_prompt
+        selected_system_prompt = system_prompt if system_prompt else self.conversation_analysis_system_prompt
+        
+        return self.llm_service.chat(selected_system_prompt, analysis_prompt_str, model_name=model_name)
+        
+    def stream_analyze_conversation(self, conversation_content, model_name=None, request_id=None, content_length=0, system_prompt=None):
         """流式分析对话内容并生成结构化信息整理文档，支持从特定位置恢复"""
         analysis_prompt_str = self.conversation_analysis_prompt_template.replace('{{conversation_content}}', conversation_content)
+        
+        # 使用自定义的system_prompt或默认的system_prompt
+        selected_system_prompt = system_prompt if system_prompt else self.conversation_analysis_system_prompt
         
         # 如果提供了content_length，需要跳过前面的内容
         if request_id and content_length > 0:
             # 从指定位置恢复流式响应
             full_response = ""
             chunks = self.llm_service.stream_chat(
-                self.conversation_analysis_system_prompt,
+                selected_system_prompt,
                 analysis_prompt_str,
                 model_name=model_name
             )
@@ -89,7 +101,7 @@ class LLMUtils:
         else:
             # 正常流式响应，不跳过任何内容
             for chunk in self.llm_service.stream_chat(
-                self.conversation_analysis_system_prompt,
+                selected_system_prompt,
                 analysis_prompt_str,
                 model_name=model_name
             ):
