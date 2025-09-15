@@ -354,7 +354,12 @@ def get_daily():
         
         # 构建返回数据
         result = {
-            'daily_conversations': daily_conversations,
+            'daily_conversations': [{
+                'date': date_key,
+                'events': daily_conversations[date_key][0]['events'],
+                'actions': daily_conversations[date_key][0]['actions'],
+                'conversation': daily_conversations[date_key][0]['conversation'],
+                } for date_key in sorted_dates],
             'sorted_dates': sorted_dates
         }
         
