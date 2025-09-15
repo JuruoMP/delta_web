@@ -6,3 +6,10 @@ preload_app = False  # 禁用预加载应用，避免多进程环境下的C扩�
 # 内存相关优化
 buffer_response = True
 keepalive = 5
+
+# 日志配置
+loglevel = 'info'  # 降低日志级别以减少无效日志
+accesslog = '-'  # 访问日志输出到标准输出
+errorlog = '-'  # 错误日志输出到标准输出
+capture_output = False  # 禁用捕获标准输出和标准错误，减少日志量
+enable_stdio_inheritance = False  # 禁用子进程继承标准文件描述符

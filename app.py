@@ -2,6 +2,7 @@ import os
 import json
 import time
 import threading
+import uuid
 import signal
 import sys
 import logging
@@ -141,11 +142,18 @@ def logout():
     flash('已成功登出', 'success')
     return redirect(url_for('login'))
 
-@app.route('/', methods=['GET', 'POST'])
+@app.route('/')
+@app.route('/index')
 @login_required
 def index():
-    prefilled_text = session.pop('prefilled_text', '')
+    # 获取预填充文本（如果有）
+    prefilled_text = session.get('prefilled_text', '')
+    
+    # 创建表单并设置预填充文本
     form = UploadForm(conversation_text=prefilled_text)
+    
+    # 不在这里立即移除，而是在表单提交后再移除
+    # 这样即使有额外的页面刷新，预填充文本也能保留
     if form.validate_on_submit():
         content = form.conversation_text.data
         try:
@@ -155,6 +163,10 @@ def index():
         except (ValueError, IndexError):
             script_time = datetime.now()
             app.logger.warning('无法解析日期，使用当前时间')
+        
+        # 表单已提交，从session中移除预填充文本
+        if 'prefilled_text' in session:
+            session.pop('prefilled_text', None)
 
         try:
             # 生成摘要
@@ -344,6 +356,35 @@ def clear_database_confirm():
     form = FlaskForm()  # 创建空表单用于CSRF令牌
     return render_template('clear_database.html', form=form)
 
+# 音频处理任务状态字典
+processing_tasks = {}
+
+def process_audio_file(file_path, file_ext, task_id):
+    """后台线程处理音频文件"""
+    try:
+        with app.app_context():
+            transcription = asr_service.transcribe_audio(file_path, format=file_ext)
+            
+            # 确保dialogue_lines存在
+            if 'dialogue_lines' not in transcription:
+                # 使用文本替代
+                text_result = transcription.get('text', 'No dialogue lines found')
+            else:
+                text_result = '\n'.join(transcription['dialogue_lines'])
+                
+            prefilled_text = f'{datetime.today().date()}\n' + text_result
+            
+            processing_tasks[task_id] = {
+                'status': 'completed',
+                'prefilled_text': prefilled_text
+            }
+    except Exception as e:
+        app.logger.error(f'Audio processing failed for task {task_id}: {str(e)}', exc_info=True)
+        processing_tasks[task_id] = {
+            'status': 'error',
+            'message': str(e)
+        }
+
 @app.route('/audio-upload', methods=['GET', 'POST'])
 @login_required
 def audio_upload():
@@ -353,53 +394,61 @@ def audio_upload():
         if audio_file:
             # 保存上传的音频文件
             filename = secure_filename(audio_file.filename)
-            app.logger.info(f"Received audio file for upload: {filename}")
             upload_folder = os.path.join(app.root_path, 'static', 'uploads')
             os.makedirs(upload_folder, exist_ok=True)
             file_path = os.path.join(upload_folder, filename)
             audio_file.save(file_path)
             
-            # 生成可访问的URL
-            file_url = url_for('static', filename=f'uploads/{filename}', _external=True)
-            
             # 获取文件格式
             file_ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else 'mp3'
             supported_formats = {'mp3', 'wav', 'ogg'}
             if file_ext not in supported_formats:
-                app.logger.warning(f"Unsupported audio format: {file_ext}")
                 flash(f'不支持的音频格式: {file_ext}，仅支持mp3、wav、ogg', 'danger')
                 return redirect(url_for('audio_upload'))
             
-            # 调用ASR服务转换音频为文本
-            try:
-                app.logger.info(f"Starting transcription for {filename}")
-                transcription = asr_service.transcribe_audio(file_path, format=file_ext)
-                # print(f'{transcription=}')
-                app.logger.info(f"Transcription successful for {filename}")
-                
-                # 提取转录文本并格式化为对话形式
-                # formatted_text = ""
-                # if isinstance(transcription, dict) and 'result' in transcription and 'segments' in transcription['result']:
-                #     formatted_text += datetime.now().strftime("%Y-%m-%d") + "\n"
-                #     for segment in transcription['result']['segments']:
-                #         speaker = segment.get('speaker', 'Unknown')
-                #         text = segment.get('text', '').strip()
-                #         if text:
-                #             formatted_text += f"{speaker}: {text}\n"
-                #     text_result = formatted_text.strip()
-                # else:
-                #     text_result = str(transcription)
-                text_result = '\n'.join(transcription['dialogue_lines'])
-                
-                # 将转录文本作为对话内容处理
-                flash('音频上传成功并已转换为文本', 'success')
-                session['prefilled_text'] = f'{datetime.today().date()}\n' + text_result
-                return redirect(url_for('index'))
-            except Exception as e:
-                app.logger.error(f'Audio processing failed: {str(e)}', exc_info=True)
-                flash(f'音频处理失败: {str(e)}', 'danger')
-                return redirect(url_for('audio_upload'))
+            # 生成任务ID并启动后台线程处理
+            task_id = str(uuid.uuid4())
+            processing_tasks[task_id] = {'status': 'processing'}
+            
+            # 启动后台线程处理音频
+            thread = threading.Thread(target=process_audio_file, args=(file_path, file_ext, task_id))
+            thread.daemon = True
+            thread.start()
+            
+            # 重定向到处理状态页面
+            return redirect(url_for('audio_processing_status', task_id=task_id))
     return render_template('audio_upload.html', form=form)
+
+@app.route('/audio-processing-status/<task_id>')
+@login_required
+def audio_processing_status(task_id):
+    if task_id not in processing_tasks:
+        flash('无效的任务ID', 'danger')
+        return redirect(url_for('audio_upload'))
+    
+    task_status = processing_tasks[task_id]
+    if task_status['status'] == 'completed':
+        # 处理完成，设置预填充文本并重定向到主页
+        if 'prefilled_text' not in task_status:
+            flash('音频处理完成，但无法获取文本结果', 'danger')
+            del processing_tasks[task_id]
+            return redirect(url_for('index'))
+        
+        session['prefilled_text'] = task_status['prefilled_text']
+        flash('音频上传成功并已转换为文本', 'success')
+        # 清理任务状态
+        del processing_tasks[task_id]
+        return redirect(url_for('index'))
+    elif task_status['status'] == 'error':
+        # 处理出错
+        error_message = task_status.get('message', '未知错误')
+        flash(f'音频处理失败: {error_message}', 'danger')
+        # 清理任务状态
+        del processing_tasks[task_id]
+        return redirect(url_for('audio_upload'))
+    
+    # 处理中，显示状态页面
+    return render_template('audio_processing_status.html', task_id=task_id)
 
 @app.route('/conversation_analysis', methods=['GET', 'POST'])
 @login_required
