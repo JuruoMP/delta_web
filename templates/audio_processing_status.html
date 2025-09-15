@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+
+{% block title %}音频处理中{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <h2>音频处理中</h2>
+    
+    <div class="card mt-4">
+        <div class="card-body">
+            <div class="text-center">
+                <div class="spinner-border" role="status">
+                    <span class="sr-only">Δ</span>
+                </div>
+                <h3 class="mt-4">正在处理您的音频文件</h3>
+                <p class="text-muted mt-2">这个过程可能需要几分钟时间，请稍候...</p>
+                
+                <div class="mt-4">
+                    <div class="progress">
+                        <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                    </div>
+                    <p id="progress-text" class="mt-2 text-sm text-muted">处理中...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mt-4 text-center">
+        <p class="text-sm text-muted">请勿关闭此页面，完成后将自动跳转。</p>
+        <a href="{{ url_for('audio_upload') }}" class="btn btn-secondary mt-2">取消并返回上传</a>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const taskId = '{{ task_id }}';
+        const progressBar = document.getElementById('progress-bar');
+        const progressText = document.getElementById('progress-text');
+        let progress = 0;
+        let progressInterval;
+        
+        // 模拟进度条更新
+        function startProgressSimulation() {
+            progressInterval = setInterval(function() {
+                if (progress < 90) {  // 只更新到90%，留10%给真正完成时的冲刺
+                    progress += 2;
+                    progressBar.style.width = progress + '%';
+                    progressBar.setAttribute('aria-valuenow', progress);
+                }
+            }, 1000);
+        }
+        
+        // 检查处理状态
+        function checkStatus() {
+            fetch('/audio-processing-status/' + taskId)
+                .then(response => {
+                    // 如果响应是重定向，表示处理已完成或出错
+                    if (response.redirected) {
+                        window.location.href = response.url;
+                        clearInterval(progressInterval);
+                    } else {
+                        // 否则继续轮询
+                        setTimeout(checkStatus, 2000);
+                    }
+                })
+                .catch(error => {
+                    console.error('检查处理状态时出错:', error);
+                    progressText.textContent = '连接错误，请刷新页面重试。';
+                    clearInterval(progressInterval);
+                });
+        }
+        
+        // 开始模拟进度和轮询
+        startProgressSimulation();
+        checkStatus();
+    });
+</script>
+{% endblock %}
