@@ -146,8 +146,8 @@ def logout():
     flash('已成功登出', 'success')
     return redirect(url_for('login'))
 
-@app.route('/')
-@app.route('/index')
+@app.route('/', methods=['GET', 'POST'])
+@app.route('/index', methods=['GET', 'POST'])
 @login_required
 def index():
     # 获取预填充文本和临时文件信息
