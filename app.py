@@ -99,6 +99,10 @@ class AudioUploadForm(FlaskForm):
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in Config.ALLOWED_EXTENSIONS
 
+# 创建临时文件目录
+TEMP_DIR = os.path.join(app.root_path, 'tmp')
+os.makedirs(TEMP_DIR, exist_ok=True)
+
 # 登录保护装饰器
 def login_required(f):
     @wraps(f)
@@ -146,14 +150,14 @@ def logout():
 @app.route('/index')
 @login_required
 def index():
-    # 获取预填充文本（如果有）
+    # 获取预填充文本和临时文件信息
     prefilled_text = session.get('prefilled_text', '')
+    transcription_temp_file = session.get('transcription_temp_file', '')
     
     # 创建表单并设置预填充文本
     form = UploadForm(conversation_text=prefilled_text)
     
-    # 不在这里立即移除，而是在表单提交后再移除
-    # 这样即使有额外的页面刷新，预填充文本也能保留
+    # 表单提交处理
     if form.validate_on_submit():
         content = form.conversation_text.data
         try:
@@ -164,9 +168,11 @@ def index():
             script_time = datetime.now()
             app.logger.warning('无法解析日期，使用当前时间')
         
-        # 表单已提交，从session中移除预填充文本
+        # 表单已提交，清理session中的相关数据
         if 'prefilled_text' in session:
             session.pop('prefilled_text', None)
+        if 'transcription_temp_file' in session:
+            session.pop('transcription_temp_file', None)
 
         try:
             # 生成摘要
@@ -198,6 +204,7 @@ def index():
                         user_memory_bank = MemoryBank(user=username)
                         user_memory_bank.add_memory('\n\n'.join(x['information'] for x in json.loads(summary)['topics']), created_date=script_time.isoformat())
                         app.logger.info('记忆更新成功')
+
                         # app.logger.info(f'最新的记忆：{user_memory_bank.get_all()}')
 
                         # 更新用户状态
@@ -224,7 +231,8 @@ def index():
             app.logger.error(f'处理对话失败: {str(e)}')
             flash(f'处理对话时发生错误: {str(e)}', 'danger')
 
-    return render_template('index.html', form=form)
+    # 传递临时文件信息到模板，用于JavaScript异步加载
+    return render_template('index.html', form=form, transcription_temp_file=transcription_temp_file)
 
 
 @app.route('/current-event')
@@ -374,10 +382,30 @@ def process_audio_file(file_path, file_ext, task_id):
                 
             prefilled_text = f'{datetime.today().date()}\n' + text_result
             
-            processing_tasks[task_id] = {
-                'status': 'completed',
-                'prefilled_text': prefilled_text
-            }
+            # 定义文本长度阈值，超过该阈值则使用临时文件存储
+            TEXT_LENGTH_THRESHOLD = 10000  # 可以根据实际情况调整
+            
+            if len(prefilled_text) > TEXT_LENGTH_THRESHOLD:
+                # 生成唯一的临时文件名
+                temp_filename = f'transcription_{task_id}.txt'
+                temp_filepath = os.path.join(TEMP_DIR, temp_filename)
+                
+                # 将转写结果写入临时文件
+                with open(temp_filepath, 'w', encoding='utf-8') as f:
+                    f.write(prefilled_text)
+                
+                # 存储临时文件名而不是完整文本
+                processing_tasks[task_id] = {
+                    'status': 'completed',
+                    'use_temp_file': True,
+                    'temp_filename': temp_filename
+                }
+            else:
+                # 文本较短，直接存储在session中
+                processing_tasks[task_id] = {
+                    'status': 'completed',
+                    'prefilled_text': prefilled_text
+                }
     except Exception as e:
         app.logger.error(f'Audio processing failed for task {task_id}: {str(e)}', exc_info=True)
         processing_tasks[task_id] = {
@@ -428,14 +456,20 @@ def audio_processing_status(task_id):
     
     task_status = processing_tasks[task_id]
     if task_status['status'] == 'completed':
-        # 处理完成，设置预填充文本并重定向到主页
-        if 'prefilled_text' not in task_status:
+        # 处理完成，设置预填充文本信息并重定向到主页
+        if 'use_temp_file' in task_status and task_status['use_temp_file']:
+            # 对于超长文本，存储临时文件名到session
+            session['transcription_temp_file'] = task_status['temp_filename']
+            # 存储一个简短的提示信息
+            session['prefilled_text'] = "[超长转写内容，正在加载中...]\n"
+            flash('音频上传成功并已转换为文本（超长内容）', 'success')
+        elif 'prefilled_text' in task_status:
+            # 普通长度文本，直接存储
+            session['prefilled_text'] = task_status['prefilled_text']
+            flash('音频上传成功并已转换为文本', 'success')
+        else:
             flash('音频处理完成，但无法获取文本结果', 'danger')
-            del processing_tasks[task_id]
-            return redirect(url_for('index'))
         
-        session['prefilled_text'] = task_status['prefilled_text']
-        flash('音频上传成功并已转换为文本', 'success')
         # 清理任务状态
         del processing_tasks[task_id]
         return redirect(url_for('index'))
@@ -449,6 +483,34 @@ def audio_processing_status(task_id):
     
     # 处理中，显示状态页面
     return render_template('audio_processing_status.html', task_id=task_id)
+
+@app.route('/api/get-transcription-file/<filename>')
+@login_required
+def get_transcription_file(filename):
+    """获取临时存储的转写文本文件"""
+    try:
+        # 确保请求的文件存在且在临时目录中
+        temp_filepath = os.path.join(TEMP_DIR, filename)
+        
+        # 验证文件路径，防止目录遍历攻击
+        if not os.path.abspath(temp_filepath).startswith(os.path.abspath(TEMP_DIR)):
+            return jsonify({'status': 'error', 'message': '无效的文件路径'}), 403
+        
+        # 检查文件是否存在
+        if not os.path.exists(temp_filepath):
+            return jsonify({'status': 'error', 'message': '文件不存在'}), 404
+        
+        # 读取文件内容
+        with open(temp_filepath, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # 读取完成后删除临时文件，避免占用空间
+        os.remove(temp_filepath)
+        
+        return jsonify({'status': 'success', 'content': content})
+    except Exception as e:
+        app.logger.error(f'读取转写文件失败: {str(e)}')
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/conversation_analysis', methods=['GET', 'POST'])
 @login_required
