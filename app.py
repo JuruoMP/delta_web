@@ -153,6 +153,7 @@ def index():
     # 获取预填充文本和临时文件信息
     prefilled_text = session.get('prefilled_text', '')
     transcription_temp_file = session.get('transcription_temp_file', '')
+    is_from_transcription = session.get('is_from_transcription', False)
     
     # 创建表单并设置预填充文本
     form = UploadForm(conversation_text=prefilled_text)
@@ -173,6 +174,8 @@ def index():
             session.pop('prefilled_text', None)
         if 'transcription_temp_file' in session:
             session.pop('transcription_temp_file', None)
+        if 'is_from_transcription' in session:
+            session.pop('is_from_transcription', None)
 
         try:
             # 生成摘要
@@ -231,8 +234,11 @@ def index():
             app.logger.error(f'处理对话失败: {str(e)}')
             flash(f'处理对话时发生错误: {str(e)}', 'danger')
 
-    # 传递临时文件信息到模板，用于JavaScript异步加载
-    return render_template('index.html', form=form, transcription_temp_file=transcription_temp_file)
+    # 只有当用户从转写页面跳转过来时，才传递临时文件信息到模板
+    # 否则传递None，避免在直接访问首页时尝试加载不存在的转写文件
+    template_transcription_temp_file = transcription_temp_file if is_from_transcription else None
+    
+    return render_template('index.html', form=form, transcription_temp_file=template_transcription_temp_file)
 
 
 @app.route('/current-event')
@@ -382,30 +388,21 @@ def process_audio_file(file_path, file_ext, task_id):
                 
             prefilled_text = f'{datetime.today().date()}\n' + text_result
             
-            # 定义文本长度阈值，超过该阈值则使用临时文件存储
-            TEXT_LENGTH_THRESHOLD = 10000  # 可以根据实际情况调整
+            # 统一使用临时文件存储转写结果，不再根据长度区分
+            # 生成唯一的临时文件名
+            temp_filename = f'transcription_{task_id}.txt'
+            temp_filepath = os.path.join(TEMP_DIR, temp_filename)
             
-            if len(prefilled_text) > TEXT_LENGTH_THRESHOLD:
-                # 生成唯一的临时文件名
-                temp_filename = f'transcription_{task_id}.txt'
-                temp_filepath = os.path.join(TEMP_DIR, temp_filename)
-                
-                # 将转写结果写入临时文件
-                with open(temp_filepath, 'w', encoding='utf-8') as f:
-                    f.write(prefilled_text)
-                
-                # 存储临时文件名而不是完整文本
-                processing_tasks[task_id] = {
-                    'status': 'completed',
-                    'use_temp_file': True,
-                    'temp_filename': temp_filename
-                }
-            else:
-                # 文本较短，直接存储在session中
-                processing_tasks[task_id] = {
-                    'status': 'completed',
-                    'prefilled_text': prefilled_text
-                }
+            # 将转写结果写入临时文件
+            with open(temp_filepath, 'w', encoding='utf-8') as f:
+                f.write(prefilled_text)
+            
+            # 存储临时文件名而不是完整文本
+            processing_tasks[task_id] = {
+                'status': 'completed',
+                'use_temp_file': True,
+                'temp_filename': temp_filename
+            }
     except Exception as e:
         app.logger.error(f'Audio processing failed for task {task_id}: {str(e)}', exc_info=True)
         processing_tasks[task_id] = {
@@ -457,15 +454,13 @@ def audio_processing_status(task_id):
     task_status = processing_tasks[task_id]
     if task_status['status'] == 'completed':
         # 处理完成，设置预填充文本信息并重定向到主页
-        if 'use_temp_file' in task_status and task_status['use_temp_file']:
-            # 对于超长文本，存储临时文件名到session
+        if 'use_temp_file' in task_status and task_status['use_temp_file'] and 'temp_filename' in task_status:
+            # 统一使用临时文件方式处理所有转写结果
             session['transcription_temp_file'] = task_status['temp_filename']
             # 存储一个简短的提示信息
-            session['prefilled_text'] = "[超长转写内容，正在加载中...]\n"
-            flash('音频上传成功并已转换为文本（超长内容）', 'success')
-        elif 'prefilled_text' in task_status:
-            # 普通长度文本，直接存储
-            session['prefilled_text'] = task_status['prefilled_text']
+            session['prefilled_text'] = "[转写内容正在加载中...]\n"
+            # 设置标志，表示用户从转写页面跳转过来
+            session['is_from_transcription'] = True
             flash('音频上传成功并已转换为文本', 'success')
         else:
             flash('音频处理完成，但无法获取文本结果', 'danger')

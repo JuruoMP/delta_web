@@ -45,11 +45,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const errorMessage = document.getElementById('error-message');
     const processingIndicator = document.getElementById('processing-indicator');
     
-    // 检查是否需要异步加载超长转写文本
+    // 检查是否需要异步加载转写文本
     const transcriptionTempFile = '{{ transcription_temp_file }}';
     if (transcriptionTempFile && transcriptionTempFile !== 'None') {
         // 显示加载中状态
-        processingIndicator.textContent = '正在加载超长转写内容...';
+        processingIndicator.textContent = '';
         processingIndicator.classList.remove('d-none');
         
         // 发送AJAX请求获取完整的转写文本
@@ -59,17 +59,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (data.status === 'success') {
                     // 更新文本区域内容
                     textarea.value = data.content;
-                    processingIndicator.classList.add('d-none');
-                } else {
-                    errorMessage.textContent = `加载转写内容失败: ${data.message || '未知错误'}`;
-                    errorMessage.classList.remove('d-none');
-                    processingIndicator.classList.add('d-none');
                 }
+                // 无论成功失败都隐藏加载状态，不显示错误消息
+                processingIndicator.classList.add('d-none');
             })
             .catch(error => {
                 console.error('加载转写内容时发生错误:', error);
-                errorMessage.textContent = '加载转写内容时发生网络错误';
-                errorMessage.classList.remove('d-none');
+                // 隐藏加载状态，但不显示错误消息
                 processingIndicator.classList.add('d-none');
             });
     }
