@@ -190,8 +190,6 @@ class FunASRService:
         self.gallery = {}
         self._load_gallery()
 
-        self._ensure_asr_model()
-
         logger.info(
             f"[Init] device={self.device}, sv_device={self.sv_device}, hub={self.hub}, "
             f"threshold={self.match_threshold}, gallery={len(self.gallery)}, "
@@ -291,6 +289,8 @@ class FunASRService:
     def _transcribe_with_global_assign(self, file_path: str, language: str = "zh",
                                        hotword_hint: str = "", restrict_gallery_ids=None, **kwargs):
 
+        self._ensure_asr_model()
+        
         # 1) ASR + 分句 + 本地说话人（规范化为 SPEAKER_XX），排序修正时间
         segments, full_text = self._run_asr(file_path, hotword_hint)
 
