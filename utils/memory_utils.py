@@ -3,15 +3,6 @@ from mem0 import Memory
 
 
 class MemoryBank:
-    # 使用字典存储不同用户的memory实例
-    _user_instances = {}
-
-    def __new__(cls, user):
-        # 如果用户实例不存在，创建新实例
-        if user not in cls._user_instances:
-            cls._user_instances[user] = super(MemoryBank, cls).__new__(cls)
-        return cls._user_instances[user]
-
     def __init__(self, user):
         # 确保每个用户实例只初始化一次
         if not hasattr(self, 'initialized') or not self.initialized:

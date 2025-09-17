@@ -204,11 +204,8 @@ def index():
 
                         add_memory(user_id, new_memory)
                         # 为当前用户创建memory_bank实例
-                        user_memory_bank = MemoryBank(user=username)
-                        user_memory_bank.add_memory('\n\n'.join(x['information'] for x in json.loads(summary)['topics']), created_date=script_time.isoformat())
+                        memory_bank.add_memory('\n\n'.join(x['information'] for x in json.loads(summary)['topics']), created_date=script_time.isoformat())
                         app.logger.info('记忆更新成功')
-
-                        # app.logger.info(f'最新的记忆：{user_memory_bank.get_all()}')
 
                         # 更新用户状态
                         with app.app_context():
@@ -620,14 +617,12 @@ def qa():
 @login_required
 def memories():
     try:
-        # 为当前登录用户创建临时的MemoryBank实例，确保获取正确的用户记忆
-        user_memory_bank = MemoryBank(user=g.current_user.username)
         # 获取当前页的记忆数据（限制为50条，避免一次性加载过多数据）
         page = request.args.get('page', 1, type=int)
         per_page = 50  # 每页显示的记忆数量
         offset = (page - 1) * per_page
         
-        all_memories = user_memory_bank.get_all(limit=per_page, offset=offset)
+        all_memories = memory_bank.get_all(limit=per_page, offset=offset)
         
         # 格式化记忆数据以便模板使用
         formatted_memories = []
