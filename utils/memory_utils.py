@@ -3,20 +3,20 @@ from mem0 import Memory
 
 
 class MemoryBank:
-    _instance = None
+    # 使用字典存储不同用户的memory实例
+    _user_instances = {}
 
-    def __new__(cls, *args, **kwargs):
-        if not cls._instance:
-            cls._instance = super(MemoryBank, cls).__new__(cls)
-        return cls._instance
+    def __new__(cls, user):
+        # 如果用户实例不存在，创建新实例
+        if user not in cls._user_instances:
+            cls._user_instances[user] = super(MemoryBank, cls).__new__(cls)
+        return cls._user_instances[user]
 
     def __init__(self, user):
-        # 无论是否已初始化，都更新user属性
-        self.user = user
-        
-        # 只在第一次初始化时设置配置和创建memory实例
+        # 确保每个用户实例只初始化一次
         if not hasattr(self, 'initialized') or not self.initialized:
             self.initialized = True
+            self.user = user  # 确保用户属性正确设置
             self.config = {
                 "llm": {"provider": "doubao", "config": {"enable_vision": True, "vision_details": "auto"}},
                 "embedder": {"provider": "doubao"},
@@ -91,8 +91,13 @@ class MemoryBank:
     
     @classmethod
     def _extract_date(cls, date_str):
-        date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S")
-        # return date_obj.strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S.%f")
+        except ValueError:
+            try:
+                date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S")
+            except ValueError:
+                return date_str[:10] if len(date_str) >= 10 else date_str
         return date_obj.strftime("%Y-%m-%d")
 
 
