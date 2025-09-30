@@ -6,6 +6,15 @@
 <div class="container mt-5">
     <h1 class="mb-4">当前事件</h1>
     
+    {% if memory_updating %}
+    <div class="alert alert-info alert-dismissible fade show" role="alert">
+        <strong>后台处理中</strong> 记忆数据正在更新，请稍候...
+        <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+        </button>
+    </div>
+    {% endif %}
+    
     <div class="card">
         <div class="card-header">
             <h5 class="mb-0">对话历史汇总</h5>
@@ -29,4 +38,13 @@
         </div>
     </div>
 </div>
+
+{% if memory_updating %}
+<script>
+// 5秒后自动刷新页面
+setTimeout(function() {
+    window.location.reload();
+}, 5000);
+</script>
+{% endif %}
 {% endblock %}

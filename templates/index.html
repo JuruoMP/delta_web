@@ -45,6 +45,31 @@ document.addEventListener('DOMContentLoaded', function() {
     const errorMessage = document.getElementById('error-message');
     const processingIndicator = document.getElementById('processing-indicator');
     
+    // 检查是否需要异步加载转写文本
+    const transcriptionTempFile = '{{ transcription_temp_file }}';
+    if (transcriptionTempFile && transcriptionTempFile !== 'None') {
+        // 显示加载中状态
+        processingIndicator.textContent = '';
+        processingIndicator.classList.remove('d-none');
+        
+        // 发送AJAX请求获取完整的转写文本
+        fetch(`/api/get-transcription-file/${transcriptionTempFile}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    // 更新文本区域内容
+                    textarea.value = data.content;
+                }
+                // 无论成功失败都隐藏加载状态，不显示错误消息
+                processingIndicator.classList.add('d-none');
+            })
+            .catch(error => {
+                console.error('加载转写内容时发生错误:', error);
+                // 隐藏加载状态，但不显示错误消息
+                processingIndicator.classList.add('d-none');
+            });
+    }
+    
     form.addEventListener('submit', function(e) {
         // 清除之前的错误消息
         errorMessage.classList.add('d-none');
@@ -59,6 +84,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         // 显示处理中状态
+        processingIndicator.textContent = '处理中...';
         processingIndicator.classList.remove('d-none');
         submitBtn.disabled = true;
     });

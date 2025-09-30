@@ -1,219 +1,109 @@
+import os
 import json
+from services.llm_service import LLMService
 
-summary_system_prompt = '''对于用户提出的所有请求，首先输出不含内容的标签<think></think>，然后进行回答。
+class LLMUtils:
+    def __init__(self, llm_service):
+        # 定义prompt文件路径
+        self.PROMPTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../prompts')
+        self.llm_service = llm_service
+        
+        # 加载prompt模板
+        self.summary_system_prompt = self.load_prompt('summary_system_prompt.txt')
+        self.summary_prompt_template = self.load_prompt('summary_prompt_template.txt')
+        self.memory_system_prompt = self.load_prompt('memory_system_prompt.txt')
+        self.memory_prompt_template = self.load_prompt('memory_prompt_template.txt')
+        self.qa_system_prompt = self.load_prompt('qa_system_prompt.txt')
+        self.qa_prompt_template_en = self.load_prompt('qa_prompt_template_en.txt')
+        self.qa_prompt_template_zh = self.load_prompt('qa_prompt_template_zh.txt')
+        self.qa_soft_system_prompt = self.load_prompt('qa_soft_system_prompt.txt')
+        self.qa_soft_prompt_template_en = self.load_prompt('qa_soft_prompt_template_en.txt')
+        self.qa_soft_prompt_template_zh = self.load_prompt('qa_soft_prompt_template_zh.txt')
+        self.conversation_analysis_system_prompt = self.load_prompt('conversation_analysis_system_prompt.txt')
+        self.conversation_analysis_prompt_template = self.load_prompt('conversation_analysis_prompt_template.txt')
 
-You are a highly skilled AI assistant specializing in conversation intelligence and data structuring. Your name is "Analyst-Bot". Your purpose is to meticulously analyze textual conversation transcripts and extract key information according to user-defined schemas.
+    def load_prompt(self, file_name):
+        """加载prompt模板文件"""
+        file_path = os.path.join(self.PROMPTS_DIR, file_name)
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return f.read().strip()
 
-# CORE REQUIREMENTS
-1. OUTPUT FORMAT: Return ONLY a single, valid JSON object with NO explanatory text outside of the JSON structure
-2. COMPLETENESS: Ensure ALL fields in the schema are present even if their value is an empty list or string
-3. ACCURACY: Extract information EXACTLY from the provided text without adding external knowledge
-4. OBJECTIVITY: Maintain neutral analysis without subjective interpretations
-5. LANGUAGE: Use SIMPLIFIED CHINESE for all extracted content
-'''
+    def gen_conversation_summary(self, content, model_name=None):
+        summary_prompt_str = self.summary_prompt_template.replace('{{json_str}}', json.dumps({'content': content}, indent=2, ensure_ascii=False))
+        return self.llm_service.chat(self.summary_system_prompt, summary_prompt_str, model_name=model_name)
 
-summary_prompt_template = '''# Analyst-Bot Task
+    def gen_memory(self, historical_data, latest_day_data, model_name=None):
+        memory_prompt_str = self.memory_prompt_template.replace('{{historical_data}}', json.dumps(historical_data, indent=2, ensure_ascii=False)).replace('{{latest_day_data}}', json.dumps(latest_day_data, indent=2, ensure_ascii=False))
+        return self.llm_service.chat(self.memory_system_prompt, memory_prompt_str, model_name=model_name)
 
-## 1. INSTRUCTIONS
-Analyze the conversation transcript provided below in the `CONVERSATION_DATA` section. Extract the specified information and return it as a single, valid JSON object. Do not add any explanatory text outside of the JSON structure.
+    def get_qa_answer(self, user_query, current_memory, retrieved_contexts, model_name=None):
+        chinese_chars = sum(1 for c in user_query if '\u4e00' <= c <= '\u9fff')
+        total_chars = max(len(user_query), 1)
 
-## 2. CONVERSATION_DATA
-```json
-{{json_str}}
-```
+        current_memory_json = json.dumps(current_memory, indent=2, ensure_ascii=False)
+        retrived_contexts_str = '\n\n'.join(retrieved_contexts)
+        
+        if chinese_chars / total_chars > 0.3:  # 中文占比超过30%判定为中文问题
+            qa_prompt_str = self.qa_prompt_template_zh.replace('{{current_memory}}', current_memory_json).replace('{{retrieved_contexts}}', retrived_contexts_str).replace('{{user_query}}', user_query)
+        else:
+            qa_prompt_str = self.qa_prompt_template_en.replace('{{current_memory}}', current_memory_json).replace('{{retrieved_contexts}}', retrived_contexts_str).replace('{{user_query}}', user_query)
+        
+        return self.llm_service.chat(self.qa_system_prompt, qa_prompt_str, model_name=model_name)
+    
+    def get_qa_answer_soft(self, user_query, current_memory, retrieved_contexts, model_name=None):
+        chinese_chars = sum(1 for c in user_query if '\u4e00' <= c <= '\u9fff')
+        total_chars = max(len(user_query), 1)
 
-## 3. REQUIRED_OUTPUT_JSON_SCHEMA
-Please populate the following JSON schema based on your analysis of the `CONVERSATION_DATA`.
-```json
-{
-  "summary": "string",
-  "topics": [
-    {
-      "title": "string",
-      "summary": "string",
-      "information": "string",
-      "type": "string",
-      "sentiment": "string"
-    }
-  ],
-  "action_items": [
-    {
-      "owner": "string",
-      "task": "string",
-      "due_date": "string or null"
-    }
-  ],
-  "key_decisions": ["string"],
-  "named_entities": {
-    "people": ["string"],
-    "organizations": ["string"],
-    "locations": ["string"],
-    "projects": ["string"],
-    "dates_times": ["string"]
-  }
-}
-```
+        current_memory_json = json.dumps(current_memory, indent=2, ensure_ascii=False)
+        retrived_contexts_str = '\n\n'.join(retrieved_contexts)
+        
+        if chinese_chars / total_chars > 0.3:  # 中文占比超过30%判定为中文问题
+            qa_prompt_str = self.qa_soft_prompt_template_zh.replace('{{current_memory}}', current_memory_json).replace('{{retrieved_contexts}}', retrived_contexts_str).replace('{{user_query}}', user_query)
+        else:
+            qa_prompt_str = self.qa_soft_prompt_template_en.replace('{{current_memory}}', current_memory_json).replace('{{retrieved_contexts}}', retrived_contexts_str).replace('{{user_query}}', user_query)
+        
+        return self.llm_service.chat(self.qa_soft_system_prompt, qa_prompt_str, model_name=model_name)
 
-## 4. EXTRACTION GUIDELINES
-- summary: A concise overview of the entire conversation (50-100 characters)
-- topics: Extract distinct discussion topics with:
-  - title: Brief topic heading
-  - summary: Key points of this topic
-  - information: Specific details, facts or data
-  - type: One of: "工作事务", "家庭生活", "学习研究", "社交娱乐", "健康医疗", "金融理财", "日常闲聊", "其他"
-  - sentiment: Overall sentiment: "积极", "中性", or "消极"
-- action_items: Extract all future tasks or commitments
-  - owner: Person responsible (if not specified, attribute to relevant speaker)
-  - task: Task description
-  - due_date: Deadline (null if not specified)
-- key_decisions: Extract all explicit agreements or conclusions
-- named_entities: Extract all named entities into appropriate categories
-'''
+    def analyze_conversation(self, conversation_content, model_name=None, system_prompt=None):
+        """分析对话内容并生成结构化信息整理文档"""
+        analysis_prompt_str = self.conversation_analysis_prompt_template.replace('{{conversation_content}}', conversation_content)
+        
+        # 使用自定义的system_prompt或默认的system_prompt
+        selected_system_prompt = system_prompt if system_prompt else self.conversation_analysis_system_prompt
+        
+        return self.llm_service.chat(selected_system_prompt, analysis_prompt_str, model_name=model_name)
+        
+    def stream_analyze_conversation(self, conversation_content, model_name=None, request_id=None, content_length=0, system_prompt=None):
+        """流式分析对话内容并生成结构化信息整理文档，支持从特定位置恢复"""
+        analysis_prompt_str = self.conversation_analysis_prompt_template.replace('{{conversation_content}}', conversation_content)
+        
+        # 使用自定义的system_prompt或默认的system_prompt
+        selected_system_prompt = system_prompt if system_prompt else self.conversation_analysis_system_prompt
+        
+        # 如果提供了content_length，需要跳过前面的内容
+        if request_id and content_length > 0:
+            # 从指定位置恢复流式响应
+            full_response = ""
+            chunks = self.llm_service.stream_chat(
+                selected_system_prompt,
+                analysis_prompt_str,
+                model_name=model_name
+            )
+            
+            for chunk in chunks:
+                full_response += chunk
+                # 只有当累积的内容长度超过指定的content_length时，才开始yield内容
+                if len(full_response) > content_length:
+                    # 计算需要跳过的字符数
+                    skip_count = len(full_response) - content_length
+                    # 只yield新的内容
+                    yield chunk[skip_count:]
+        else:
+            # 正常流式响应，不跳过任何内容
+            for chunk in self.llm_service.stream_chat(
+                selected_system_prompt,
+                analysis_prompt_str,
+                model_name=model_name
+            ):
+                yield chunk
 
-
-memory_system_prompt = '''对于用户提出的所有请求，首先输出不含内容的标签<think></think>，然后进行回答。
-
-# Role: AI Life Status Analyst
-
-# Task
-Your task is to act as a sophisticated life status analyst. You will receive two sets of user life event data in JSON format: `historical_data` and `latest_day_data`. Your goal is to intelligently integrate them to generate a new "latest status" that reflects the user's current life situation. The output must be in the exact same JSON format as the input.
-
-# INPUT REQUIREMENTS
-- Process ONLY the data provided in the input JSON objects
-- Preserve all critical information from both historical and latest data
-- Focus on meaningful connections and developments between data points
-
-# OUTPUT REQUIREMENTS
-- Return ONLY a valid JSON object with NO additional text or explanations
-- Maintain the same structure as the input data
-- Use SIMPLIFIED CHINESE for all content
-- Ensure all fields contain relevant, non-redundant information
-
-# INPUT DATA FORMAT
-You will be provided with two JSON objects:
-1. `historical_data`: A list of topics representing the user's past events
-2. `latest_day_data`: A list of topics from the user's most recent day
-
-Both inputs follow this structure:
-{
-  "topics": [
-    {
-      "title": "string",
-      "summary": "string",
-      "information": "string",
-      "type": "string",
-      "sentiment": "string"
-    }
-  ]
-}
-
-# PROCESSING LOGIC
-Follow these steps carefully to generate the new status:
-
-1. **Merge and Group**:
-   - Combine all topics from `historical_data` and `latest_day_data`
-   - Group by `type` field (e.g., all "工作" topics together)
-
-2. **Analyze Each Group (Storyline Analysis)**:
-   - For each group, analyze events from oldest to newest
-   - Identify narrative evolution: shifts in sentiment, project start/end, recurring patterns
-   - Focus on latest events: how they change, advance, or resolve historical narrative
-   - Determine current state: new challenge, recent achievement, recovery period, or stable routine
-
-3. **Generate Synthesized Topics**:
-   - For each group, create ONE OR MORE new summary-level `topic` objects (DO NOT copy old topics)
-   - title: New concise title summarizing current state of life area
-   - summary: New narrative connecting historical context with latest events
-   - information: Key supporting details, often from latest_day_data
-   - type: Use the group's type
-   - sentiment: Overall current feeling for this area
-
-4. **Create a Holistic Summary**:
-   - Add as FIRST topic: special topic with `type: "overall"`
-   - title: "今日生活总览"
-   - summary: Brief overview of most significant events/feelings from latest_day_data
-   - information: Key connections between different life areas
-   - sentiment: Overall sentiment combining all life areas
-'''
-
-memory_prompt_template = '''
-historical_data = {{historical_data}}
-
-
-latest_day_data = {{latest_day_data}}
-'''
-
-
-qa_system_prompt = '''对于用户提出的所有请求，首先输出不含内容的标签<think></think>，然后进行回答。
-
-请使用中文回答问题。
-
-
-# ROLE AND GOAL
-You are a highly intelligent and empathetic personal assistant AI for a life-logging application. Your primary goal is to help the user understand their own life events and feelings by answering their questions based *exclusively* on the contextual information provided from their logs.
-
-# CONTEXT FROM USER'S LOGS
-To answer the user's question, you have been provided with two types of information:
-1.  **Structured Summaries:** Key topics identified from the user's logs with categorized information
-2.  **Raw Transcript Snippets:** Original, verbatim conversation extracts with timestamps
-
-Use summaries for quick topic overview and raw snippets for exact details, quotes, and emotional context.
-
-# CRITICAL CONSTRAINTS
-- You MUST answer ONLY using information explicitly present in the provided context
-- You MUST NOT use any external knowledge, assumptions, or information not in the context
-- You MUST NOT fabricate any details, feelings, or events not explicitly stated in the logs
-- If the context lacks sufficient information, respond ONLY with: "I'm sorry, but I couldn't find specific information about that in your logs."
-
-'''
-
-
-qa_prompt_template = '''
----
-[START OF CONTEXT]
-
-{{current_memory}}
-
-{{retrieved_contexts}}
-
-[END OF CONTEXT]
----
-
-# USER'S QUESTION
-Now, based strictly on the context provided above, please answer the following user's question.
-
-User Question: "{{user_query}}"
-
-# ANSWER GUIDELINES
-1. **Contextual Anchoring:** Begin by identifying which parts of the context are most relevant to the question (e.g., specific topics from summaries or timestamps from transcripts)
-2. **Evidence-Based Response:** For each key point in your answer, explicitly reference the source context using [Summary Topic: X] or [Transcript: Timestamp] notation
-3. **Direct Quotation:** When mentioning specific statements or feelings, include verbatim quotes from raw transcripts in quotation marks
-4. **Structured Organization:** Group related information together and present in a logical sequence
-5. **Explicit Limitations:** If the context contains conflicting information, acknowledge this explicitly
-
-# RULES AND CONSTRAINTS
-1.  **Strictly Grounded:** Base your answer **ONLY** on the information within the "[START OF CONTEXT]" section. Synthesize information from both the summaries and the raw transcripts.
-2.  **Prioritize Raw Text for Details:** When quoting or describing specific feelings or events, rely on the "Raw Transcript Snippet".
-3.  **Acknowledge Limits:** If the provided context does not contain enough information, you MUST respond with: "I'm sorry, but I couldn't find specific information about that in your logs." Do not try to guess.
-4.  **Tone & Style:** Respond in a helpful, respectful, and conversational tone. Address the user directly using "you" and "your".
-
-# YOUR ANSWER:
-'''
-
-
-def llm_gen_conversation_summary(llm_service, json_content):
-    summary_prompt_str = summary_prompt_template.replace('{{json_str}}', json.dumps(json_content, indent=2, ensure_ascii=False))
-    summary_content = llm_service.chat(summary_system_prompt, summary_prompt_str)
-    return summary_content
-
-
-def llm_gen_memory(llm_service, historical_data, latest_day_data):
-    memory_prompt_str = memory_prompt_template.replace('{{historical_data}}', json.dumps(historical_data, indent=2, ensure_ascii=False)).replace('{{latest_day_data}}', json.dumps(latest_day_data, indent=2, ensure_ascii=False))
-    memory_content = llm_service.chat(memory_system_prompt, memory_prompt_str)
-    return memory_content
-
-  
-def llm_get_qa_answer(llm_service, current_memory, retrieved_contexts, user_query):
-    qa_prompt_str = qa_prompt_template.replace('{{current_memory}}', current_memory).replace('{{retrieved_contexts}}', retrieved_contexts).replace('{{user_query}}', user_query)
-    qa_content = llm_service.chat(qa_system_prompt, qa_prompt_str)
-    return qa_content

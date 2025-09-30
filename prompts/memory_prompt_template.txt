@@ -1,0 +1,4 @@
+historical_data = {{historical_data}}
+
+
+latest_day_data = {{latest_day_data}}

@@ -1,12 +1,12 @@
 from datetime import date
 from extensions import db
-from models import Event, Conversation, Memory
+from models import Event, Conversation, Memory, Action
 
 
-def add_event(date, title, details):
+def add_event(user_id, date, title, details):
     """添加新事件到数据库"""
     try:
-        event = Event(date=date, title=title, details=details)
+        event = Event(user_id=user_id, date=date, title=title, details=details)
         db.session.add(event)
         db.session.commit()
         return event
@@ -15,10 +15,10 @@ def add_event(date, title, details):
         raise e
 
 
-def update_event(event_id, date=None, title=None, details=None):
+def update_event(user_id, event_id, date=None, title=None, details=None):
     """更新事件记录"""
     try:
-        event = Event.query.get(event_id)
+        event = Event.query.filter_by(id=event_id, user_id=user_id).first()
         if not event:
             return None
         if date:
@@ -34,13 +34,13 @@ def update_event(event_id, date=None, title=None, details=None):
         raise e
 
 
-def add_conversation(content, summary, date=None):
+def add_conversation(user_id, content, summary, date=None):
     """添加新对话到数据库"""
     try:
         if date:
-            conversation = Conversation(content=content, summary=summary, created_at=date)
+            conversation = Conversation(user_id=user_id, content=content, summary=summary, created_at=date)
         else:
-            conversation = Conversation(content=content, summary=summary)
+            conversation = Conversation(user_id=user_id, content=content, summary=summary)
         db.session.add(conversation)
         db.session.commit()
         return conversation
@@ -49,54 +49,75 @@ def add_conversation(content, summary, date=None):
         raise e
 
 
-def get_all_conversations():
-    """获取所有对话记录，按创建时间倒序排列"""
-    return Conversation.query.order_by(Conversation.created_at.desc()).all()
+def get_all_conversations(user_id):
+    """获取指定用户的所有对话记录，按创建时间倒序排列"""
+    return Conversation.query.filter_by(user_id=user_id).order_by(Conversation.created_at.desc()).all()
 
 
-def clear_conversations():
-    """清空所有对话记录"""
+def clear_conversations(user_id):
+    """清空指定用户的所有对话记录"""
     try:
-        db.session.query(Conversation).delete()
+        db.session.query(Conversation).filter_by(user_id=user_id).delete()
         db.session.commit()
         return True
     except Exception as e:
         db.session.rollback()
         raise e
 
-def clear_all_data():
-    """清空数据库中所有表的数据并返回删除记录数"""
+def clear_all_data(user_id=None):
+    """清空数据库中所有表的数据并返回删除记录数
+    如果提供了user_id，则只清空该用户的数据；否则清空所有数据（管理员使用）
+    同时会清除用户的memory_updating标记"""
     try:
-        deleted_conversations = db.session.query(Conversation).delete()
-        deleted_events = db.session.query(Event).delete()
-        deleted_memories = db.session.query(Memory).delete()
+        # 清除用户的memory_updating标记
+        from models import User
+        if user_id:
+            # 只清空指定用户的数据
+            user = User.query.get(user_id)
+            if user:
+                user.memory_updating = False
+            
+            deleted_conversations = db.session.query(Conversation).filter_by(user_id=user_id).delete()
+            deleted_events = db.session.query(Event).filter_by(user_id=user_id).delete()
+            deleted_memories = db.session.query(Memory).filter_by(user_id=user_id).delete()
+            deleted_actions = db.session.query(Action).filter_by(user_id=user_id).delete()
+        else:
+            # 清空所有数据（管理员使用）
+            # 将所有用户的memory_updating标记设为False
+            db.session.query(User).update({User.memory_updating: False})
+            
+            deleted_conversations = db.session.query(Conversation).delete()
+            deleted_events = db.session.query(Event).delete()
+            deleted_memories = db.session.query(Memory).delete()
+            deleted_actions = db.session.query(Action).delete()
         db.session.commit()
         return {
             'conversations': deleted_conversations,
             'events': deleted_events,
-            'memories': deleted_memories
+            'memories': deleted_memories,
+            'actions': deleted_actions
         }
     except Exception as e:
         db.session.rollback()
         raise e
 
-# def generate_conversation_summary():
-#     """生成所有对话的汇总"""
-#     conversations = Conversation.query.order_by(Conversation.created_at.asc()).all()
+# def generate_conversation_summary(user_id):
+#     """生成指定用户所有对话的汇总"""
+#     conversations = Conversation.query.filter_by(user_id=user_id).order_by(Conversation.created_at.asc()).all()
 #     if not conversations:
 #         return "暂无对话记录"
-    
+#     
 #     # 拼接所有对话内容
 #     all_content = '\n\n'.join([conv.content for conv in conversations])
-    
+#     
 #     # 这里可以添加更复杂的汇总逻辑
 #     summary = f"对话汇总（共{len(conversations)}条）：\n{all_content[:500]}..."
 #     return summary
 
-def add_memory(content):
+def add_memory(user_id, content):
     """添加新的记忆记录"""
     try:
-        memory = Memory(content=content)
+        memory = Memory(user_id=user_id, content=content)
         db.session.add(memory)
         db.session.commit()
         return memory
@@ -104,6 +125,6 @@ def add_memory(content):
         db.session.rollback()
         raise e
 
-def get_latest_memory():
-    """获取最新的记忆记录"""
-    return Memory.query.order_by(Memory.updated_at.desc()).first()
+def get_latest_memory(user_id):
+    """获取指定用户的最新记忆记录"""
+    return Memory.query.filter_by(user_id=user_id).order_by(Memory.updated_at.desc()).first()

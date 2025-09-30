@@ -6,3 +6,16 @@ Werkzeug==2.3.7
 requests==2.31.0
 volcengine-python-sdk[ark]
 openai
+cython
+pydub
+pyannote.audio>=3.2.0
+huggingface-hub
+torch
+torchaudio
+speechbrain
+numpy
+# whisperx is installed from a specific commit for stability
+git+https://github.com/m-bain/whisperX.git
+openai-whisper
+jieba
+funasr
