@@ -69,6 +69,7 @@ elif Config.GLOBAL_LANG == 'zh':
 else:
     raise ValueError("Language not supported")
 memory_bank = MemoryBank(user=me)
+app.memory_bank = memory_bank
 
 # 表单定义
 class LoginForm(FlaskForm):

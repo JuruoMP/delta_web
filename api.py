@@ -22,7 +22,7 @@ api_bp = Blueprint('api', __name__)
 # 初始化服务
 llm_service = LLMService()
 llm_utils = LLMUtils(llm_service)
-# 延迟初始化memory_bank，在具体API端点中根据用户上下文初始化
+# 从Flask应用中获取已初始化的memory_bank实例，避免重复初始化
 memory_bank = None
 
 # 声明全局变量
@@ -133,9 +133,12 @@ def create_conversation():
                 db.session.add(memory)
                 db.session.commit()
                 
-                # 为特定用户创建memory_bank实例
-                user_memory_bank = MemoryBank(user=user_id)
-                user_memory_bank.add_memory('\n\n'.join(x['information'] for x in json.loads(summary)['topics']), created_date=script_time.isoformat())
+                # 使用应用中已初始化的memory_bank实例，避免重复初始化导致的存储冲突
+                global memory_bank
+                if memory_bank is None:
+                    # 如果memory_bank尚未初始化，则从current_app获取
+                    memory_bank = current_app.memory_bank if hasattr(current_app, 'memory_bank') else MemoryBank(user=user_id)
+                memory_bank.add_memory('\n\n'.join(x['information'] for x in json.loads(summary)['topics']), created_date=script_time.isoformat())
             except Exception as e:
                 print(f'后台更新记忆失败: {str(e)}')
 
@@ -176,9 +179,12 @@ def ask_question():
         if latest_memory:
             memory_topics = json.loads(latest_memory.content)['topics']
 
-        # 使用MEM0模式回答，为特定用户创建memory_bank实例
-        user_memory_bank = MemoryBank(user=user_id)
-        content_list = user_memory_bank.extract_qa_memorries(question)
+        # 使用应用中已初始化的memory_bank实例，避免重复初始化导致的存储冲突
+        global memory_bank
+        if memory_bank is None:
+            # 如果memory_bank尚未初始化，则从current_app获取
+            memory_bank = current_app.memory_bank if hasattr(current_app, 'memory_bank') else MemoryBank(user=user_id)
+        content_list = memory_bank.extract_qa_memorries(question)
         answer = llm_utils.get_qa_answer_soft(question, memory_topics, content_list, model_name=model)
 
         return jsonify({
