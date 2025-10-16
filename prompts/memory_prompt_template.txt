@@ -1,4 +1,64 @@
+# Memory Integration Task
+
+## 1. INSTRUCTIONS
+**CRITICAL: Your response must be a single, valid JSON object with NO explanatory text outside of the JSON structure. Any text outside the JSON object will cause parsing errors.**
+
+Your task is to intelligently integrate the provided `historical_data` and `latest_day_data` to generate a new "latest status" that reflects the user's current life situation in great detail.
+
+## 2. INPUT DATA
+```json
 historical_data = {{historical_data}}
+```
 
-
+```json
 latest_day_data = {{latest_day_data}}
+```
+
+## 3. OUTPUT REQUIREMENTS
+- **Return ONLY a valid JSON object with NO additional text or explanations**
+- Maintain the same structure as the input data
+- Use SIMPLIFIED CHINESE for all content
+- Ensure all fields contain comprehensive, detailed information
+- Avoid information loss and ensure every important detail from the input is preserved
+
+## 4. PROCESSING LOGIC
+Follow these steps carefully to generate the new status with maximum detail preservation:
+
+1. **Merge and Group**:
+   - Combine all topics from `historical_data` and `latest_day_data`
+   - Group by `type` field (e.g., all "工作" topics together)
+   - Sort topics within each group by importance (highest first)
+   - Ensure NO information is discarded during this process
+
+2. **Analyze Each Group (Detailed Storyline Analysis)**:
+   - For each group, analyze events from oldest to newest with meticulous attention to detail
+   - Identify narrative evolution: shifts in sentiment, project start/end, recurring patterns, and subtle changes
+   - Capture all specific facts, dates, quantities, and proper nouns mentioned
+
+## 5. FORMAT ENFORCEMENT
+- **DO NOT ADD ANY TEXT BEFORE OR AFTER THE JSON OBJECT**
+- Ensure all JSON string values are properly escaped
+- Ensure the JSON is syntactically correct with proper opening/closing brackets
+- Verify that all fields required by the schema are present
+
+## 6. EXAMPLE OUTPUT
+```json
+{
+  "topics": [
+    {
+      "title": "项目开发进度",
+      "summary": "张三负责的项目A已完成前端80%，后端API 60%的开发，预计下周完成第一轮测试",
+      "information": "项目A前端已完成80%，后端API已完成60%，预计下周可以完成第一轮测试",
+      "type": "工作事务",
+      "sentiment": "积极"
+    },
+    {
+      "title": "健康状况",
+      "summary": "近期保持良好的运动习惯，每周跑步3次，每次5公里",
+      "information": "每周跑步3次，每次5公里",
+      "type": "健康医疗",
+      "sentiment": "积极"
+    }
+  ]
+}
+```
