@@ -220,6 +220,7 @@ def register_socketio_handlers(app_socketio):
             model = data.get('model', 'default')
             user_id = data.get('user_id', 'default_user')
             session_id = data.get('session_id', 'default_session')
+            emit_context = data.get('emit_context', False)
 
             # 获取内存主题
             memory_topics = {}
@@ -234,11 +235,12 @@ def register_socketio_handlers(app_socketio):
             content_list = memory_bank.extract_qa_memorries(question)
 
             # 发送上下文信息
-            emit('stream_qa_response', {
-                'status': 'context',
-                'session_id': session_id,
-                'context': content_list
-            })
+            if emit_context:
+                emit('stream_qa_response', {
+                    'status': 'context',
+                    'session_id': session_id,
+                    'context': content_list
+                })
 
             # 流式获取并发送回答
             full_answer = ""
