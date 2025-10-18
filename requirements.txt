@@ -1,8 +1,11 @@
-Flask==2.3.3
+Flask==3.0.0
+Flask-SocketIO==5.3.5
 Flask-SQLAlchemy==3.1.1
 Flask-WTF==1.2.1
+gevent==23.9.1
+gevent-websocket==0.10.1
 python-dotenv==1.0.0
-Werkzeug==2.3.7
+Werkzeug==3.0.1
 requests==2.31.0
 volcengine-python-sdk[ark]
 openai
@@ -15,7 +18,7 @@ torchaudio
 speechbrain
 numpy
 # whisperx is installed from a specific commit for stability
-git+https://github.com/m-bain/whisperX.git
+# git+https://github.com/m-bain/whisperX.git
 openai-whisper
 jieba
 funasr

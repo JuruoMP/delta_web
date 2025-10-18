@@ -11,6 +11,7 @@ from logging.handlers import RotatingFileHandler
 from datetime import datetime
 from functools import wraps
 from flask import Flask, render_template, redirect, url_for, flash, request, jsonify, session, g, copy_current_request_context
+from flask_socketio import SocketIO
 from flask_wtf import FlaskForm
 from wtforms import TextAreaField, FileField, SubmitField, StringField, PasswordField, SelectField
 from wtforms.validators import DataRequired, Length
@@ -45,9 +46,14 @@ class Config:
 app = Flask(__name__)
 app.config.from_object(Config)
 
-# 导入并注册API蓝图
-from api import api_bp
+# 导入并注册API蓝图和WebSocket处理器
+from api import api_bp, register_socketio_handlers
 app.register_blueprint(api_bp, url_prefix='/api')
+
+# 初始化SocketIO
+socketio = SocketIO(app, cors_allowed_origins="*")
+# 注册WebSocket事件处理器
+register_socketio_handlers(socketio)
 
 # 配置日志
 if not app.debug:
@@ -180,7 +186,13 @@ def index():
 
         try:
             # 生成摘要
-            summary = llm_utils.gen_conversation_summary(content)
+            for _ in range(5):
+                try:
+                    summary = llm_utils.gen_conversation_summary(content)
+                    xx = json.loads(summary)['topics']
+                    break
+                except:
+                    continue
             add_conversation(g.current_user.id, content, summary, script_time)
             flash('对话已成功处理', 'success')
 
@@ -199,7 +211,13 @@ def index():
                             memory_topics = json.loads(latest_memory.content)['topics']
                             latest_day_topics = json.loads(summary)['topics']
 
-                            new_memory = llm_utils.gen_memory(memory_topics, latest_day_topics)
+                            for _ in range(5):
+                                try:
+                                    new_memory = llm_utils.gen_memory(memory_topics, latest_day_topics)
+                                    xx = json.loads(new_memory.content)['topics']
+                                    break
+                                except:
+                                    continue
                         else:
                             new_memory = json.dumps({'topics': json.loads(summary)['topics']}, ensure_ascii=False)
 
@@ -681,4 +699,5 @@ signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # 使用socketio.run启动应用，支持WebSocket
+    socketio.run(app, debug=True, host='0.0.0.0', port=5000)

@@ -63,6 +63,23 @@ class LLMUtils:
             qa_prompt_str = self.qa_soft_prompt_template_en.replace('{{current_memory}}', current_memory_json).replace('{{retrieved_contexts}}', retrived_contexts_str).replace('{{user_query}}', user_query)
         
         return self.llm_service.chat(self.qa_soft_system_prompt, qa_prompt_str, model_name=model_name)
+    
+    def stream_qa_answer_soft(self, user_query, current_memory, retrieved_contexts, model_name=None):
+        """流式获取QA回答"""
+        chinese_chars = sum(1 for c in user_query if '\u4e00' <= c <= '\u9fff')
+        total_chars = max(len(user_query), 1)
+
+        current_memory_json = json.dumps(current_memory, indent=2, ensure_ascii=False)
+        retrived_contexts_str = '\n\n'.join(retrieved_contexts)
+        
+        if chinese_chars / total_chars > 0.3:  # 中文占比超过30%判定为中文问题
+            qa_prompt_str = self.qa_soft_prompt_template_zh.replace('{{current_memory}}', current_memory_json).replace('{{retrieved_contexts}}', retrived_contexts_str).replace('{{user_query}}', user_query)
+        else:
+            qa_prompt_str = self.qa_soft_prompt_template_en.replace('{{current_memory}}', current_memory_json).replace('{{retrieved_contexts}}', retrived_contexts_str).replace('{{user_query}}', user_query)
+        
+        # 使用流式方法获取回答
+        for chunk in self.llm_service.stream_chat(self.qa_soft_system_prompt, qa_prompt_str, model_name=model_name):
+            yield chunk
 
     def analyze_conversation(self, conversation_content, model_name=None, system_prompt=None):
         """分析对话内容并生成结构化信息整理文档"""

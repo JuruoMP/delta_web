@@ -4,6 +4,7 @@ import hashlib
 from datetime import datetime
 from flask import Blueprint, request, jsonify, current_app
 from werkzeug.utils import secure_filename
+from flask_socketio import SocketIO, emit
 
 # 导入必要的服务和模型
 from extensions import db
@@ -24,6 +25,9 @@ llm_service = LLMService()
 llm_utils = LLMUtils(llm_service)
 # 从Flask应用中获取已初始化的memory_bank实例，避免重复初始化
 memory_bank = None
+
+# 声明socketio实例，将在app.py中初始化
+socketio = None
 
 # 声明全局变量
 asr_service = None
@@ -197,6 +201,72 @@ def ask_question():
         })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+# WebSocket事件处理器
+def register_socketio_handlers(app_socketio):
+    """注册WebSocket事件处理器"""
+    global socketio
+    socketio = app_socketio
+    
+    @socketio.on('stream_qa')
+    def handle_stream_qa(data):
+        """处理流式问答请求"""
+        try:
+            if not data or 'question' not in data:
+                emit('stream_qa_response', {'status': 'error', 'message': '缺少问题内容'})
+                return
+
+            question = data['question']
+            model = data.get('model', 'default')
+            user_id = data.get('user_id', 'default_user')
+            session_id = data.get('session_id', 'default_session')
+
+            # 获取内存主题
+            memory_topics = {}
+            latest_memory = Memory.query.order_by(Memory.updated_at.desc()).first()
+            if latest_memory:
+                memory_topics = json.loads(latest_memory.content)['topics']
+
+            # 使用应用中已初始化的memory_bank实例
+            global memory_bank
+            if memory_bank is None:
+                memory_bank = current_app.memory_bank if hasattr(current_app, 'memory_bank') else MemoryBank(user=user_id)
+            content_list = memory_bank.extract_qa_memorries(question)
+
+            # 发送上下文信息
+            emit('stream_qa_response', {
+                'status': 'context',
+                'session_id': session_id,
+                'context': content_list
+            })
+
+            # 流式获取并发送回答
+            full_answer = ""
+            for chunk in llm_utils.stream_qa_answer_soft(question, memory_topics, content_list, model_name=model):
+                full_answer += chunk
+                emit('stream_qa_response', {
+                    'status': 'chunk',
+                    'session_id': session_id,
+                    'chunk': chunk
+                })
+                socketio.sleep(0)  # 让出控制权，避免阻塞
+
+            # 发送完成信号
+            emit('stream_qa_response', {
+                'status': 'complete',
+                'session_id': session_id,
+                'full_answer': full_answer
+            })
+
+        except Exception as e:
+            error_message = str(e)
+            session_id = data.get('session_id', 'default_session') if data else 'default_session'
+            emit('stream_qa_response', {
+                'status': 'error',
+                'session_id': session_id,
+                'message': error_message
+            })
+            current_app.logger.error(f'Stream QA error: {error_message}', exc_info=True)
 
 # 记忆相关API
 @api_bp.route('/memories', methods=['GET'])
@@ -456,6 +526,7 @@ def transcribe_audio():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-# 在app.py中注册蓝图时使用以下代码
-# from api import api_bp
+# 在app.py中注册蓝图和WebSocket处理器时使用以下代码
+# from api import api_bp, register_socketio_handlers
 # app.register_blueprint(api_bp, url_prefix='/api')
+# register_socketio_handlers(socketio)

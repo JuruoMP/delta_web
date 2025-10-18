@@ -3,9 +3,12 @@ bind = '0.0.0.0:8008'  # 绑定 IP 和端口
 timeout = 120
 limit_request_line = 8190  # 设置请求行大小限制为8190
 preload_app = False  # 禁用预加载应用，避免多进程环境下的C扩展和线程安全问题
+
+# WebSocket支持配置
+worker_class = 'geventwebsocket.gunicorn.workers.GeventWebSocketWorker'
 # 内存相关优化
 buffer_response = True
-keepalive = 5
+keepalive = 30  # 增加keepalive时间以支持WebSocket长连接
 
 # 日志配置
 loglevel = 'info'  # 降低日志级别以减少无效日志
