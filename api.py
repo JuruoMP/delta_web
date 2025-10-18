@@ -2,7 +2,7 @@ import os
 import json
 import hashlib
 from datetime import datetime
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, g
 from werkzeug.utils import secure_filename
 from flask_socketio import SocketIO, emit
 
@@ -282,8 +282,11 @@ def get_memories():
         offset = (page - 1) * per_page
         
         # 为特定用户创建memory_bank实例
-        user_memory_bank = MemoryBank(user=user_id)
-        all_memories = user_memory_bank.get_all(limit=per_page, offset=offset)
+        global memory_bank
+        if memory_bank is None:
+            # 如果memory_bank尚未初始化，则从current_app获取
+            memory_bank = current_app.memory_bank if hasattr(current_app, 'memory_bank') else MemoryBank(user=user_id)
+        all_memories = memory_bank.get_all(limit=per_page, offset=offset)
         
         formatted_memories = []
         for mem in sorted(all_memories['results'], key=lambda x: x['created_at'], reverse=True):
@@ -305,6 +308,7 @@ def get_memories():
             }
         })
     except Exception as e:
+        print(e)
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 # @api_bp.route('/memories/latest', methods=['GET'])
@@ -366,6 +370,7 @@ def get_events():
                 event_list.append(event)
         return jsonify({'status': 'success', 'data': event_list})
     except Exception as e:
+        print(e)
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @api_bp.route('/get_daily', methods=['GET'])

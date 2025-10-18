@@ -125,6 +125,7 @@ def add_memory(user_id, content):
         db.session.rollback()
         raise e
 
-def get_latest_memory(user_id):
+def get_latest_memory(user_id=1):
     """获取指定用户的最新记忆记录"""
+    print(f'debug: user_id = {user_id}')
     return Memory.query.filter_by(user_id=user_id).order_by(Memory.updated_at.desc()).first()
